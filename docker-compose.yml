@@ -1,0 +1,154 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: phoenix_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: phoenix_user
+      POSTGRES_PASSWORD: phoenix_password
+      POSTGRES_DB: phoenix_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U phoenix_user -d phoenix_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - phoenix_network
+
+  valkey:
+    image: valkey/valkey:7-alpine
+    container_name: phoenix_valkey
+    restart: always
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - phoenix_network
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: phoenix_rabbitmq
+    restart: always
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    networks:
+      - phoenix_network
+
+  minio:
+    image: minio/minio:latest
+    container_name: phoenix_minio
+    restart: always
+    ports:
+      - "9005:9000"
+      - "9006:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadminpassword
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - phoenix_network
+
+  meilisearch:
+    image: getmeili/meilisearch:latest
+    container_name: phoenix_meilisearch
+    restart: always
+    ports:
+      - "7700:7700"
+    environment:
+      MEILI_MASTER_KEY: meilimasterkey123
+    volumes:
+      - meilisearch_data:/meili_data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - phoenix_network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: phoenix_backend
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      DATABASE_URL: "postgresql://phoenix_user:phoenix_password@postgres:5432/phoenix_db?schema=public"
+      VALKEY_HOST: valkey
+      VALKEY_PORT: 6379
+      RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672"
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadminpassword
+      MINIO_BUCKET_NAME: project-phoenix
+      MINIO_PUBLIC_URL: "http://localhost:9005"
+      MEILISEARCH_HOST: "http://meilisearch:7700"
+      MEILISEARCH_API_KEY: "meilimasterkey123"
+      JWT_ACCESS_SECRET: "phoenix_jwt_access_secret_key_123456"
+      JWT_REFRESH_SECRET: "phoenix_jwt_refresh_secret_key_654321"
+      JWT_ACCESS_EXPIRY: "15m"
+      JWT_REFRESH_EXPIRY: "7d"
+      FIREBASE_CREDENTIALS_PATH: "/usr/src/app/firebase/serviceAccountKey.json"
+    volumes:
+      - ./backend/firebase:/usr/src/app/firebase:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/v1/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - phoenix_network
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
+  minio_data:
+  meilisearch_data:
+
+networks:
+  phoenix_network:
+    name: phoenix_network
+    driver: bridge

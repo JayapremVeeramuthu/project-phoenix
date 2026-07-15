@@ -1,0 +1,261 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  CUSTOMER
+  TECHNICIAN
+  BRANCH_MANAGER
+  FOUNDER_ADMIN
+}
+
+model User {
+  id              String    @id @default(uuid()) @db.Uuid
+  firebaseUid     String?   @unique
+  phoneNumber     String    @unique
+  email           String?   @unique
+  name            String
+  role            Role      @default(CUSTOMER)
+  avatarUrl       String?
+  refreshToken    String?
+  password        String?
+  provider        String?
+  isEmailVerified Boolean   @default(false)
+  lastLoginAt     DateTime?
+  gender          String?
+  dateOfBirth     String?
+  address         String?
+  city            String?
+  state           String?
+  pincode         String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  // Relations
+  properties    Property[]
+  bookings      Booking[]       @relation("CustomerBookings")
+  jobs          Booking[]       @relation("TechnicianJobs")
+  notifications Notification[]
+  auditLogs     AuditLog[]
+
+  @@index([phoneNumber])
+  @@index([email])
+}
+
+model Property {
+  id                  String    @id @default(uuid()) @db.Uuid
+  customerId          String    @db.Uuid
+  name                String
+  address             String
+  installedAppliances String[]  // Array of appliance names
+  notes               String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  deletedAt           DateTime?
+
+  // Relations
+  customer      User           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  warranties    Warranty[]
+  amcContracts  AmcContract[]
+  bookings      Booking[]
+
+  @@index([customerId])
+}
+
+model ServiceCategory {
+  id        String        @id
+  nameEn    String
+  nameTa    String
+  icon      String
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  deletedAt DateTime?
+
+  // Relations
+  items     ServiceItem[]
+}
+
+model ServiceItem {
+  id              String          @id
+  categoryId      String
+  nameEn          String
+  nameTa          String
+  descriptionEn   String
+  descriptionTa   String
+  basePrice       Float
+  durationMinutes Int
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  deletedAt       DateTime?
+
+  // Relations
+  category        ServiceCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  bookings        Booking[]
+
+  @@index([categoryId])
+}
+
+enum BookingStatus {
+  PENDING
+  ASSIGNED
+  TRAVELLING
+  REACHED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model Booking {
+  id             String    @id @default(uuid()) @db.Uuid
+  localId        String?   @unique
+  customerId     String    @db.Uuid
+  technicianId   String?   @db.Uuid
+  propertyId     String    @db.Uuid
+  serviceId      String
+  address        String
+  scheduledAt    DateTime
+  timeSlot       String
+  isEmergency    Boolean   @default(false)
+  description    String
+  imageUrls      String[]  // Array of MinIO uploaded image URLs
+  voiceNoteUrl   String?
+  voiceTranscript String?
+  estimatedPrice Float
+  status         BookingStatus @default(PENDING)
+  latitude       Float?
+  longitude      Float?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  // Relations
+  customer      User            @relation("CustomerBookings", fields: [customerId], references: [id], onDelete: Cascade)
+  technician    User?           @relation("TechnicianJobs", fields: [technicianId], references: [id], onDelete: SetNull)
+  property      Property        @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  serviceItem   ServiceItem     @relation(fields: [serviceId], references: [id])
+  timeline      BookingTimeline[]
+  invoices      Invoice[]
+
+  @@index([customerId])
+  @@index([technicianId])
+  @@index([propertyId])
+  @@index([status])
+}
+
+model BookingTimeline {
+  id        String    @id @default(uuid()) @db.Uuid
+  bookingId String    @db.Uuid
+  status    String
+  notes     String?
+  createdAt DateTime  @default(now())
+
+  // Relations
+  booking   Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+}
+
+enum InvoiceStatus {
+  UNPAID
+  PAID
+  CANCELLED
+}
+
+model Invoice {
+  id             String        @id @default(uuid()) @db.Uuid
+  bookingId      String        @db.Uuid
+  amount         Float
+  taxAmount      Float
+  discountAmount Float         @default(0.0)
+  totalAmount    Float
+  status         InvoiceStatus @default(UNPAID)
+  paymentMethod  String?       // UPI, CARD, CAS
+  paymentId      String?       // Razorpay payment ID
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  // Relations
+  booking        Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+}
+
+model Warranty {
+  id          String    @id @default(uuid()) @db.Uuid
+  propertyId  String    @db.Uuid
+  itemName    String
+  installDate DateTime
+  expiryDate  DateTime
+  duration    String
+  status      String    @default("ACTIVE") // ACTIVE, EXPIRED
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  property    Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId])
+}
+
+model AmcContract {
+  id              String    @id @default(uuid()) @db.Uuid
+  propertyId      String    @db.Uuid
+  applianceName   String
+  scheduleType    String    // e.g. "Bi-Annual"
+  nextServiceDate DateTime
+  checksRemaining Int       @default(2)
+  status          String    @default("ACTIVE")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  property        Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId])
+}
+
+model Notification {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  title     String
+  message   String
+  isRead    Boolean   @default(false)
+  createdAt DateTime  @default(now())
+
+  // Relations
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model AuditLog {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String?   @db.Uuid
+  action    String
+  details   String
+  ipAddress String?
+  createdAt DateTime  @default(now())
+
+  // Relations
+  user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+}
+
+model Product {
+  id          String   @id @default(uuid()) @db.Uuid
+  category    String
+  name        String
+  description String
+  price       Float
+  imageUrl    String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+

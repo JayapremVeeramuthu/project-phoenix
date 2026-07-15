@@ -1,0 +1,46 @@
+# Project Phoenix Workspace-wide gitignore
+
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+
+# IntelliJ / VS Code
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# Node / Backend
+node_modules/
+dist/
+
+# Local Environment Variables
+.env
+.env.*
+!.env.example
+
+# Flutter/Dart related (recursive)
+**/.dart_tool/
+**/build/
+**/.flutter-plugins-dependencies
+**/.pub-cache/
+**/.pub/
+**/doc/api/
+**/ios/Flutter/.last_build_id
+**/android/app/debug/
+**/android/app/profile/
+**/android/app/release/
+
+# Firebase
+backend/firebase/serviceAccountKey.json
+backend/firebase/*.json
