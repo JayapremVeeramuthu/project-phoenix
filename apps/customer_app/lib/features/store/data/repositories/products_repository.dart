@@ -1,5 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:project_phoenix_customer/core/network/api_client.dart';
+import 'package:shared_api/shared_api.dart';
 
 class Product {
   final String id;

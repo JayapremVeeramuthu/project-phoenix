@@ -1,0 +1,11 @@
+name: shared_theme
+description: Shared theme tokens and styling configuration for Project Phoenix.
+version: 1.0.0
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: '>=3.10.0'
+
+dependencies:
+  flutter:
+    sdk: flutter

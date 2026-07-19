@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:project_phoenix_customer/core/network/api_client.dart';
+import 'package:shared_api/shared_api.dart';
 import 'package:project_phoenix_customer/features/booking/data/repositories/booking_repository.dart';
-import 'package:project_phoenix_customer/features/booking/data/models/booking_dto.dart';
+import 'package:shared_models/shared_models.dart';
 
 void main() {
   group('BookingRepository Unit Tests', () {

@@ -4,6 +4,9 @@ import { AuthService } from './auth.service';
 import { FirebaseTokenDto } from './dto/firebase-token.dto';
 import { RefreshDto } from './dto/refresh.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { TechnicianLoginDto } from './dto/technician-login.dto';
+import { TechnicianAvailabilityDto } from './dto/technician-availability.dto';
+import { AdminLoginDto } from './dto/admin-login.dto';
 import { RateLimiterGuard } from '../common/guards/rate-limiter.guard';
 
 @ApiTags('Authentication')
@@ -25,6 +28,30 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Tokens issued successfully' })
   async login(@Body() dto: FirebaseTokenDto) {
     return this.authService.login(dto.idToken);
+  }
+
+  @Post('technician/login')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Authenticate a technician using ID and password' })
+  @ApiResponse({ status: 200, description: 'Technician authenticated successfully' })
+  async technicianLogin(@Body() dto: TechnicianLoginDto) {
+    return this.authService.technicianLogin(dto);
+  }
+
+  @Put('technician/availability')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Toggle technician availability (online/offline)' })
+  @ApiResponse({ status: 200, description: 'Availability updated successfully' })
+  async updateAvailability(@Body() dto: TechnicianAvailabilityDto) {
+    return this.authService.updateAvailability(dto);
+  }
+
+  @Post('admin/login')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Authenticate an admin user' })
+  @ApiResponse({ status: 200, description: 'Admin authenticated successfully' })
+  async adminLogin(@Body() dto: AdminLoginDto) {
+    return this.authService.adminLogin(dto);
   }
 
   @Post('refresh')
@@ -94,5 +121,17 @@ export class AuthController {
   @ApiOperation({ summary: 'Update user profile details' })
   async updateProfile(@Body() dto: UpdateProfileDto) {
     return this.authService.updateProfile(dto);
+  }
+
+  @Post('technician/change-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Change password for a technician' })
+  @ApiResponse({ status: 200, description: 'Password updated successfully' })
+  async technicianChangePassword(
+    @Body('userId') userId: string,
+    @Body('newPassword') newPassword: string,
+    @Body('currentPassword') currentPassword?: string,
+  ) {
+    return this.authService.technicianChangePassword({ userId, currentPassword, newPassword });
   }
 }

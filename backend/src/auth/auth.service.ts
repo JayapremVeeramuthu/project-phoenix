@@ -1,10 +1,14 @@
-import { Injectable, UnauthorizedException, BadRequestException, OnModuleInit } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, OnModuleInit, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import * as fs from 'fs';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { TechnicianLoginDto } from './dto/technician-login.dto';
+import { TechnicianAvailabilityDto } from './dto/technician-availability.dto';
+import { AdminLoginDto } from './dto/admin-login.dto';
+import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class AuthService implements OnModuleInit {
@@ -261,6 +265,12 @@ export class AuthService implements OnModuleInit {
       throw new BadRequestException('User not found.');
     }
 
+    if (user.isFounder) {
+      if (fields.email && fields.email !== user.email) {
+        throw new ForbiddenException('The Founder Admin email cannot be changed.');
+      }
+    }
+
     const updatedUser = await this.prisma.user.update({
       where: { id: userId },
       data: fields,
@@ -275,5 +285,173 @@ export class AuthService implements OnModuleInit {
     });
 
     return updatedUser;
+  }
+
+  async technicianLogin(dto: TechnicianLoginDto) {
+    const user = await this.prisma.user.findFirst({
+      where: {
+        technicianId: dto.technicianId.toUpperCase(),
+        role: 'TECHNICIAN',
+      },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const isPasswordValid = await bcrypt.compare(dto.password, user.password || '');
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const tokens = await this.generateTokens(user.id, user.role);
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: user.id,
+        action: 'TECHNICIAN_LOGIN',
+        details: `Technician logged in with ID: ${dto.technicianId}`,
+      },
+    });
+
+    return {
+      ...tokens,
+      user: {
+        id: user.id,
+        name: user.name,
+        role: user.role,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        technicianId: user.technicianId,
+        branch: user.branch,
+        isOnline: user.isOnline,
+        mustChangePassword: user.mustChangePassword,
+      },
+    };
+  }
+
+  async updateAvailability(dto: TechnicianAvailabilityDto) {
+    const updatedUser = await this.prisma.user.update({
+      where: { id: dto.userId },
+      data: { isOnline: dto.isOnline },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: dto.userId,
+        action: 'UPDATE_AVAILABILITY',
+        details: `Technician availability updated to: ${dto.isOnline ? 'ONLINE' : 'OFFLINE'}`,
+      },
+    });
+
+    return {
+      userId: updatedUser.id,
+      isOnline: updatedUser.isOnline,
+    };
+  }
+
+  async adminLogin(dto: AdminLoginDto) {
+    const user = await this.prisma.user.findFirst({
+      where: {
+        email: dto.email,
+        role: 'FOUNDER_ADMIN',
+      },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const isPasswordValid = await bcrypt.compare(dto.password, user.password || '');
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const tokens = await this.generateTokens(user.id, user.role);
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: user.id,
+        action: 'ADMIN_LOGIN',
+        details: `Admin logged in with email: ${dto.email}`,
+      },
+    });
+
+    return {
+      ...tokens,
+      user: {
+        id: user.id,
+        name: user.name,
+        role: user.role,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+      },
+    };
+  }
+
+  async technicianChangePassword(dto: { userId: string; currentPassword?: string; newPassword: string }) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: dto.userId },
+    });
+    if (!user || user.role !== 'TECHNICIAN') {
+      throw new NotFoundException('Technician not found.');
+    }
+
+    const password = dto.newPassword;
+    const hasMinLength = password.length >= 8;
+    const hasUppercase = /[A-Z]/.test(password);
+    const hasLowercase = /[a-z]/.test(password);
+    const hasNumber = /\d/.test(password);
+    const hasSpecial = /[!@#$%^&*(),.?":{}|<>_~\-+=/[\]\\`';]/.test(password) || /[_\W]/.test(password);
+
+    if (!hasMinLength || !hasUppercase || !hasLowercase || !hasNumber || !hasSpecial) {
+      throw new BadRequestException(
+        'Password must be at least 8 characters long, containing at least one uppercase letter, one lowercase letter, one number, and one special character.',
+      );
+    }
+
+    const isSameAsOld = await bcrypt.compare(dto.newPassword, user.password || '');
+    if (isSameAsOld) {
+      throw new BadRequestException('New password cannot be the same as the current or temporary password.');
+    }
+
+    if (!user.mustChangePassword) {
+      if (!dto.currentPassword) {
+        throw new BadRequestException('Current password is required.');
+      }
+      const isPasswordValid = await bcrypt.compare(dto.currentPassword, user.password || '');
+      if (!isPasswordValid) {
+        throw new BadRequestException('Incorrect current password.');
+      }
+    }
+
+    const hashedPassword = await bcrypt.hash(dto.newPassword, 10);
+    await this.prisma.user.update({
+      where: { id: dto.userId },
+      data: {
+        password: hashedPassword,
+        mustChangePassword: false,
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: dto.userId,
+        action: 'TECHNICIAN_PASSWORD_CHANGE',
+        details: `Technician changed their password successfully.`,
+      },
+    });
+
+    return { message: 'Password updated successfully.' };
   }
 }

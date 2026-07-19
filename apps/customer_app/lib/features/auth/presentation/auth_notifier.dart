@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
-import 'package:project_phoenix_customer/core/network/api_client.dart';
+import 'package:shared_api/shared_api.dart';
 import 'package:project_phoenix_customer/features/auth/data/firebase_service.dart';
 
 class AuthState {
@@ -281,6 +281,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
       );
     } catch (e) {
       debugPrint('Failed to refresh profile cache: ${e.toString()}');
+      if (e is ApiException && e.statusCode == 400) {
+        await logout();
+      }
     }
   }
 

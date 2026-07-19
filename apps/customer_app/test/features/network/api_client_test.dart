@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:project_phoenix_customer/core/network/api_client.dart';
-import 'package:project_phoenix_customer/core/network/api_exceptions.dart';
+import 'package:shared_api/shared_api.dart';
 import 'package:dio/dio.dart';
 
 void main() {

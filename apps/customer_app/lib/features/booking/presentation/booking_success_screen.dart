@@ -1,11 +1,14 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:project_phoenix_customer/core/routing/app_router.dart';
 import 'package:project_phoenix_customer/core/theme/settings_provider.dart';
-import 'package:project_phoenix_customer/core/theme/app_theme.dart';
+import 'package:shared_api/shared_api.dart';
+import 'package:shared_theme/shared_theme.dart';
+import 'package:project_phoenix_customer/features/booking/data/repositories/booking_repository.dart';
 
-class BookingSuccessScreen extends ConsumerWidget {
+class BookingSuccessScreen extends ConsumerStatefulWidget {
   final String bookingId;
   final bool isOffline;
 
@@ -16,7 +19,99 @@ class BookingSuccessScreen extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<BookingSuccessScreen> createState() => _BookingSuccessScreenState();
+}
+
+class _BookingSuccessScreenState extends ConsumerState<BookingSuccessScreen>
+    with SingleTickerProviderStateMixin {
+  // Technician data – null until a technician accepts
+  String? _technicianName;
+  String? _technicianPhone;
+  String? _technicianBranch;
+  String? _technicianDisplayId;
+  String _bookingStatus = 'WAITING_FOR_TECHNICIAN';
+
+  StreamSubscription? _statusSubscription;
+  late AnimationController _pulseController;
+
+  Future<void> _fetchInitialTracking() async {
+    try {
+      final data = await ref.read(bookingRepositoryProvider).getBookingTracking(widget.bookingId);
+      if (mounted) {
+        setState(() {
+          if (data['currentStatus'] != null) {
+            _bookingStatus = data['currentStatus'];
+          }
+          _technicianName = data['technicianName'];
+          _technicianPhone = data['technicianPhone'];
+          _technicianBranch = data['technicianBranch'];
+          _technicianDisplayId = data['technicianId'];
+        });
+      }
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchInitialTracking();
+      _connectSocket();
+    });
+  }
+
+  void _connectSocket() {
+    final socket = ref.read(socketServiceProvider);
+    socket.connect();
+    socket.joinRoom('booking_${widget.bookingId}');
+
+    _statusSubscription = socket.bookingStatusUpdatedStream.listen((event) {
+      if (!mounted) return;
+      if (event['bookingId'] != widget.bookingId) return;
+
+      final status = event['status'] as String?;
+      final techName = event['technicianName'] as String?;
+      final techPhone = event['technicianPhone'] as String?;
+      final techBranch = event['technicianBranch'] as String?;
+      final techId = event['technicianId'] as String?;
+
+      setState(() {
+        if (status != null) _bookingStatus = status;
+        if (techName != null) _technicianName = techName;
+        if (techPhone != null) _technicianPhone = techPhone;
+        if (techBranch != null) _technicianBranch = techBranch;
+        if (techId != null) _technicianDisplayId = techId;
+      });
+    });
+  }
+
+  bool get _isTechnicianAssigned =>
+      _technicianName != null &&
+      (_bookingStatus == 'TECHNICIAN_ASSIGNED' ||
+       _bookingStatus == 'ASSIGNED' ||
+       _bookingStatus == 'TRAVELLING' ||
+       _bookingStatus == 'REACHED' ||
+       _bookingStatus == 'IN_PROGRESS' ||
+       _bookingStatus == 'PAYMENT_PENDING' ||
+       _bookingStatus == 'COMPLETED');
+
+  @override
+  void dispose() {
+    _statusSubscription?.cancel();
+    _pulseController.dispose();
+    ref.read(socketServiceProvider).leaveRoom('booking_${widget.bookingId}');
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
     final isSeniorMode = settings.isSeniorMode;
     final theme = Theme.of(context);
@@ -45,22 +140,22 @@ class BookingSuccessScreen extends ConsumerWidget {
                 child: Container(
                   padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
-                    color: isOffline
+                    color: widget.isOffline
                         ? (isHighContrast ? Colors.black : Colors.orange.shade50)
                         : successBg,
                     shape: BoxShape.circle,
                     border: isHighContrast ? Border.all(color: Colors.white, width: 3) : null,
                   ),
                   child: Icon(
-                    isOffline ? Icons.cloud_off_rounded : Icons.check_circle_outline,
+                    widget.isOffline ? Icons.cloud_off_rounded : Icons.check_circle_outline,
                     size: isSeniorMode ? 80 : 64,
-                    color: isOffline ? Colors.orange : successColor,
+                    color: widget.isOffline ? Colors.orange : successColor,
                   ),
                 ),
               ),
               const SizedBox(height: 24),
               Text(
-                isOffline ? 'Saved Offline' : 'Booking Confirmed!',
+                widget.isOffline ? 'Saved Offline' : 'Booking Confirmed!',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: isSeniorMode ? 30 : 24,
@@ -69,9 +164,9 @@ class BookingSuccessScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 12),
               Text(
-                isOffline
+                widget.isOffline
                     ? 'No internet connection detected. The booking has been queued locally in SQLite and will sync once network is online.'
-                    : 'Your request has been successfully transmitted. Allocations will follow shortly.',
+                    : 'Your request has been successfully transmitted. A technician will be assigned shortly.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: textMuted,
@@ -92,7 +187,7 @@ class BookingSuccessScreen extends ConsumerWidget {
                       Text('Booking ID', style: TextStyle(color: textMuted, fontSize: 12)),
                       const SizedBox(height: 4),
                       Text(
-                        bookingId,
+                        widget.bookingId,
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: isSeniorMode ? 22 : 18,
@@ -102,41 +197,25 @@ class BookingSuccessScreen extends ConsumerWidget {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text('ETA Response'),
+                          const Text('Booking Status'),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: Colors.teal.shade50,
+                              color: _isTechnicianAssigned
+                                  ? Colors.green.shade50
+                                  : Colors.orange.shade50,
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
-                              '45 Mins',
+                              _isTechnicianAssigned
+                                  ? 'TECHNICIAN ASSIGNED'
+                                  : 'WAITING FOR TECHNICIAN',
                               style: TextStyle(
-                                color: Colors.teal.shade800,
+                                color: _isTechnicianAssigned
+                                    ? Colors.green.shade800
+                                    : Colors.orange.shade800,
                                 fontWeight: FontWeight.bold,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text('Warranty Status'),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.blue.shade50,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              '1-Year Active',
-                              style: TextStyle(
-                                color: Colors.blue.shade800,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
+                                fontSize: 12,
                               ),
                             ),
                           ),
@@ -148,96 +227,14 @@ class BookingSuccessScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 16),
 
-              // Assigned Technician Profile
-              Card(
-                color: cardBg,
-                elevation: isHighContrast ? 0 : 2,
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Assigned Technician',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: isSeniorMode ? 18 : 15,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          CircleAvatar(
-                            radius: isSeniorMode ? 28 : 24,
-                            backgroundColor: theme.colorScheme.primaryContainer,
-                            child: Icon(Icons.person, size: isSeniorMode ? 28 : 24),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Karthik Raja',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: isSeniorMode ? 18 : 15,
-                                  ),
-                                ),
-                                const Text('Branch #04 - Anna Nagar'),
-                                const Row(
-                                  children: [
-                                    Icon(Icons.star, color: Colors.amber, size: 14),
-                                    SizedBox(width: 4),
-                                    Text('4.9 (142 reviews)', style: TextStyle(fontSize: 12)),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Calling Support...')),
-                                );
-                              },
-                              icon: const Icon(Icons.phone),
-                              label: const Text('Call'),
-                              style: OutlinedButton.styleFrom(
-                                minimumSize: Size(double.infinity, isSeniorMode ? 52 : 44),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Opening WhatsApp support helper...')),
-                                );
-                              },
-                              icon: const Icon(Icons.chat_bubble_outline),
-                              label: const Text('WhatsApp'),
-                              style: OutlinedButton.styleFrom(
-                                minimumSize: Size(double.infinity, isSeniorMode ? 52 : 44),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+              // Technician Card – searching state or assigned state
+              _isTechnicianAssigned
+                  ? _buildAssignedTechnicianCard(isSeniorMode, theme, cardBg, textMuted)
+                  : _buildSearchingCard(isSeniorMode, theme, cardBg),
+
               const SizedBox(height: 24),
 
-              // Detailed Next Steps Timeline
+              // Next Steps Timeline
               Text(
                 'Next Steps',
                 style: TextStyle(
@@ -246,17 +243,17 @@ class BookingSuccessScreen extends ConsumerWidget {
                 ),
               ),
               const SizedBox(height: 12),
-              _buildStepItem('1', 'Technician Dispatch', 'Technician mapping initialized and route maps drawn.', isSeniorMode, theme),
-              _buildStepItem('2', 'Pre-service Diagnosis', 'Technician inspects structural links and inputs.', isSeniorMode, theme),
-              _buildStepItem('3', 'Standard Job Execution', 'Fixing and testing complete with standard checklist.', isSeniorMode, theme),
-              _buildStepItem('4', 'Parts Warranty Active', 'Digital invoice and warranty files locked for active service.', isSeniorMode, theme),
+              _buildStepItem('1', 'Technician Dispatch', 'An available technician will be assigned to your request.', isSeniorMode, theme),
+              _buildStepItem('2', 'Pre-service Diagnosis', 'Technician inspects the issue and provides assessment.', isSeniorMode, theme),
+              _buildStepItem('3', 'Service Execution', 'Fixing and testing complete with standard checklist.', isSeniorMode, theme),
+              _buildStepItem('4', 'Completion & Invoice', 'Digital invoice generated after service completion.', isSeniorMode, theme),
 
               const SizedBox(height: 32),
 
               // Action buttons
               ElevatedButton(
                 onPressed: () {
-                  context.go('${AppRouter.tracking}/$bookingId');
+                  context.go('${AppRouter.tracking}/${widget.bookingId}');
                 },
                 style: ElevatedButton.styleFrom(
                   minimumSize: Size(double.infinity, isSeniorMode ? 60 : 52),
@@ -275,6 +272,159 @@ class BookingSuccessScreen extends ConsumerWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  /// Pulsing "Searching for technician..." placeholder card
+  Widget _buildSearchingCard(bool isSeniorMode, ThemeData theme, Color cardBg) {
+    return Card(
+      color: cardBg,
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 32.0, horizontal: 16.0),
+        child: Column(
+          children: [
+            AnimatedBuilder(
+              animation: _pulseController,
+              builder: (context, child) {
+                return Opacity(
+                  opacity: 0.4 + (_pulseController.value * 0.6),
+                  child: Icon(
+                    Icons.person_search_rounded,
+                    size: isSeniorMode ? 56 : 48,
+                    color: theme.colorScheme.primary,
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Searching for an available technician...',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: isSeniorMode ? 18 : 15,
+                fontWeight: FontWeight.w600,
+                color: theme.colorScheme.primary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'You will be notified once a technician accepts your request.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey.shade600,
+              ),
+            ),
+            const SizedBox(height: 16),
+            LinearProgressIndicator(
+              backgroundColor: Colors.grey.shade200,
+              valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Real technician data card – only shown after acceptance
+  Widget _buildAssignedTechnicianCard(bool isSeniorMode, ThemeData theme, Color cardBg, Color textMuted) {
+    return Card(
+      color: cardBg,
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green.shade600, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Technician Assigned',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: isSeniorMode ? 18 : 15,
+                    color: Colors.green.shade700,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: isSeniorMode ? 28 : 24,
+                  backgroundColor: theme.colorScheme.primaryContainer,
+                  child: Icon(Icons.person, size: isSeniorMode ? 28 : 24),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _technicianName ?? '',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: isSeniorMode ? 18 : 15,
+                        ),
+                      ),
+                      if (_technicianDisplayId != null && _technicianDisplayId!.isNotEmpty)
+                        Text(
+                          'ID: $_technicianDisplayId',
+                          style: TextStyle(fontSize: 12, color: textMuted),
+                        ),
+                      if (_technicianBranch != null && _technicianBranch!.isNotEmpty)
+                        Text(
+                          _technicianBranch!,
+                          style: TextStyle(fontSize: 13, color: textMuted),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (_technicianPhone != null && _technicianPhone!.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Calling $_technicianPhone...')),
+                        );
+                      },
+                      icon: const Icon(Icons.phone),
+                      label: const Text('Call'),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: Size(double.infinity, isSeniorMode ? 52 : 44),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Opening chat...')),
+                        );
+                      },
+                      icon: const Icon(Icons.chat_bubble_outline),
+                      label: const Text('Chat'),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: Size(double.infinity, isSeniorMode ? 52 : 44),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
         ),
       ),
     );

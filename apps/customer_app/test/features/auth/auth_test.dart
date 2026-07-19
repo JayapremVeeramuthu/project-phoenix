@@ -3,7 +3,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:project_phoenix_customer/core/network/api_client.dart';
+import 'package:shared_api/shared_api.dart';
 import 'package:project_phoenix_customer/features/auth/data/firebase_service.dart';
 import 'package:project_phoenix_customer/features/auth/presentation/auth_notifier.dart';
 

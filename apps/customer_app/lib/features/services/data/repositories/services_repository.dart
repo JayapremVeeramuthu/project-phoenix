@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:project_phoenix_customer/core/network/api_client.dart';
+import 'package:shared_api/shared_api.dart';
 import 'package:project_phoenix_customer/core/database/sqlite_helper.dart';
 import 'package:project_phoenix_customer/features/services/domain/entities/service_item.dart';
 

@@ -36,6 +36,16 @@ async function bootstrap() {
     next();
   });
 
+  // Global HTTP Request/Response logger
+  app.use((req: any, res: any, next: any) => {
+    const start = Date.now();
+    res.on('finish', () => {
+      const duration = Date.now() - start;
+      console.log(`[HTTP] ${req.method} ${req.originalUrl || req.url} - ${res.statusCode} (${duration}ms)`);
+    });
+    next();
+  });
+
   app.enableCors({
     origin: true,
     credentials: true,

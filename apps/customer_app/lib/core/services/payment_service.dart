@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'package:project_phoenix_customer/core/network/api_client.dart';
+import 'package:shared_api/shared_api.dart';
 
 class PaymentService {
   final ApiClient _apiClient;

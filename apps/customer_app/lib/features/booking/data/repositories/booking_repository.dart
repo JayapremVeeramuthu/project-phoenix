@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:project_phoenix_customer/core/network/api_client.dart';
-import 'package:project_phoenix_customer/core/network/api_exceptions.dart';
-import 'package:project_phoenix_customer/features/booking/data/models/booking_dto.dart';
+import 'package:shared_api/shared_api.dart';
+import 'package:shared_api/shared_api.dart';
+import 'package:shared_models/shared_models.dart';
 
 class BookingRepository {
   final ApiClient _apiClient;
@@ -10,8 +10,10 @@ class BookingRepository {
 
   Future<BookingDto> createBooking(BookingDto booking) async {
     try {
+      final payload = booking.toJson();
+      print('[DEBUG] POST /bookings payload: $payload');
       final response =
-          await _apiClient.post('/bookings', data: booking.toJson());
+          await _apiClient.post('/bookings', data: payload);
       if (response.statusCode == 200 || response.statusCode == 201) {
         return BookingDto.fromJson(response.data);
       }
@@ -26,12 +28,16 @@ class BookingRepository {
     }
   }
 
-  Future<List<BookingDto>> getBookings({int page = 1, int limit = 10}) async {
+  Future<List<BookingDto>> getBookings({int page = 1, int limit = 10, String? customerId}) async {
     try {
-      final response = await _apiClient.get('/bookings', queryParameters: {
+      final queryParams = <String, dynamic>{
         'page': page,
         'limit': limit,
-      });
+      };
+      if (customerId != null) {
+        queryParams['customerId'] = customerId;
+      }
+      final response = await _apiClient.get('/bookings', queryParameters: queryParams);
       if (response.statusCode == 200) {
         final list = response.data['data'] as List;
         return list.map((json) => BookingDto.fromJson(json)).toList();

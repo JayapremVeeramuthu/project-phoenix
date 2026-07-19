@@ -21,7 +21,7 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
-      colorScheme: ColorScheme.light(
+      colorScheme: const ColorScheme.light(
         primary: primaryTeal,
         onPrimary: Colors.white,
         secondary: accentGold,
@@ -86,17 +86,17 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
-      colorScheme: ColorScheme.dark(
-        primary: const Color(0xFF2DD4BF),
+      colorScheme: const ColorScheme.dark(
+        primary: Color(0xFF2DD4BF),
         onPrimary: Colors.black,
-        secondary: const Color(0xFFFBBF24),
+        secondary: Color(0xFFFBBF24),
         onSecondary: Colors.black,
-        surface: const Color(0xFF111827),
-        onSurface: const Color(0xFFF9FAFB),
-        error: const Color(0xFFEF4444),
+        surface: Color(0xFF111827),
+        onSurface: Color(0xFFF9FAFB),
+        error: Color(0xFFEF4444),
         onError: Colors.black,
-        primaryContainer: const Color(0xFF115E59),
-        onPrimaryContainer: const Color(0xFFCCFBF1),
+        primaryContainer: Color(0xFF115E59),
+        onPrimaryContainer: Color(0xFFCCFBF1),
       ),
       fontFamily: fontFamily,
       appBarTheme: const AppBarTheme(

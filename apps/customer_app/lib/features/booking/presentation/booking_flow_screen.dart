@@ -15,6 +15,8 @@ import 'package:project_phoenix_customer/features/auth/presentation/auth_notifie
 import 'package:project_phoenix_customer/features/booking/presentation/booking_notifier.dart';
 import 'package:project_phoenix_customer/features/services/data/repositories/services_repository.dart';
 import 'package:project_phoenix_customer/features/services/domain/entities/service_item.dart';
+import 'package:project_phoenix_customer/features/booking/data/repositories/booking_repository.dart';
+import 'package:shared_models/shared_models.dart';
 
 class ImageUploadTracker {
   final String id;
@@ -83,17 +85,37 @@ class _BookingFlowScreenState extends ConsumerState<BookingFlowScreen> {
 
   bool _termsAccepted = false;
 
-  final List<Map<String, String>> _pastComplaints = [
-    {
-      'date': '14 May 2026',
-      'service': 'Ceiling Fan Installation',
-      'technician': 'Karthik Raja',
-      'notes':
-          'Installed BLDC fan. Advised regulator swap on next electrical visit.',
-      'recommendations': 'Verify regulator voltage matches.',
-      'materials': 'Heavy anchor bolt, 1.5 sqmm wire link.'
+  List<BookingDto> _realPastBookings = [];
+  bool _loadingHistory = true;
+
+  Future<void> _fetchPastBookings() async {
+    try {
+      final customerId = ref.read(authNotifierProvider).userId;
+      if (customerId != null) {
+        final repo = ref.read(bookingRepositoryProvider);
+        final bookings = await repo.getBookings(page: 1, limit: 50, customerId: customerId);
+        final completed = bookings.where((b) => b.status == 'COMPLETED').toList();
+        if (mounted) {
+          setState(() {
+            _realPastBookings = completed;
+            _loadingHistory = false;
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _loadingHistory = false;
+          });
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _loadingHistory = false;
+        });
+      }
     }
-  ];
+  }
 
   @override
   void initState() {
@@ -108,6 +130,7 @@ class _BookingFlowScreenState extends ConsumerState<BookingFlowScreen> {
     _pincodeController.text = '600096';
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchPastBookings();
       final service =
           ref.read(servicesRepositoryProvider).getServiceById(widget.serviceId);
       if (service != null) {
@@ -744,30 +767,45 @@ class _BookingFlowScreenState extends ConsumerState<BookingFlowScreen> {
 
   // --- Step 2: Auto-Complaint History ---
   Widget _buildComplaintHistoryStep(bool isSeniorMode, Color themeColor) {
+    if (_loadingHistory) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildAutoHistoryHeader(),
+          const SizedBox(height: 32),
+          const Center(
+            child: CircularProgressIndicator(),
+          ),
+        ],
+      );
+    }
+
+    if (_realPastBookings.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildAutoHistoryHeader(),
+          const SizedBox(height: 24),
+          Text(
+            'Previous Service Records',
+            style: TextStyle(
+                fontSize: isSeniorMode ? 22 : 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 20),
+          const Center(
+            child: Text(
+              'No previous service records found.',
+              style: TextStyle(color: Colors.black54),
+            ),
+          ),
+        ],
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.blue.shade50,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.blue.shade200),
-          ),
-          child: const Row(
-            children: [
-              Icon(Icons.info_outline, color: Colors.blue),
-              SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Auto-History Check: We checked your property files so you do not have to repeat past diagnostics.',
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold, color: Colors.blue),
-                ),
-              ),
-            ],
-          ),
-        ),
+        _buildAutoHistoryHeader(),
         const SizedBox(height: 24),
         Text(
           'Previous Service Records',
@@ -775,7 +813,16 @@ class _BookingFlowScreenState extends ConsumerState<BookingFlowScreen> {
               fontSize: isSeniorMode ? 22 : 18, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 12),
-        ..._pastComplaints.map((log) {
+        ..._realPastBookings.map((log) {
+          final serviceName = log.serviceIds.isNotEmpty
+              ? log.serviceIds.map((s) => s.split('-').map((w) {
+                  if (w.isEmpty) return '';
+                  return w[0].toUpperCase() + w.substring(1);
+                }).join(' ')).join(', ')
+              : 'General Service';
+          final formattedDate = log.scheduledAt.isNotEmpty
+              ? log.scheduledAt.split('T')[0]
+              : 'N/A';
           return Card(
             child: Padding(
               padding: const EdgeInsets.all(16.0),
@@ -785,21 +832,23 @@ class _BookingFlowScreenState extends ConsumerState<BookingFlowScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(log['service']!,
-                          style: const TextStyle(fontWeight: FontWeight.bold)),
-                      Text(log['date']!,
+                      Expanded(
+                        child: Text(serviceName,
+                            style: const TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                      Text(formattedDate,
                           style: const TextStyle(color: Colors.black54)),
                     ],
                   ),
                   const Divider(),
-                  Text('Technician: ${log['technician']}'),
+                  Text('Technician: ${log.technicianName ?? "Awaiting Assignment"}'),
                   const SizedBox(height: 6),
-                  Text('Diagnosis: "${log['notes']}"',
+                  Text('Diagnosis: "${log.description}"',
                       style: const TextStyle(fontStyle: FontStyle.italic)),
                   const SizedBox(height: 6),
-                  Text('Materials used: ${log['materials']}'),
+                  Text('Materials used: Standard maintenance parts'),
                   const SizedBox(height: 6),
-                  Text('Recommendations: ${log['recommendations']}',
+                  Text('Recommendations: System check complete',
                       style: TextStyle(
                           color: themeColor, fontWeight: FontWeight.w600)),
                 ],
@@ -808,6 +857,30 @@ class _BookingFlowScreenState extends ConsumerState<BookingFlowScreen> {
           );
         }).toList(),
       ],
+    );
+  }
+
+  Widget _buildAutoHistoryHeader() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.blue.shade200),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.info_outline, color: Colors.blue),
+          SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Auto-History Check: We checked your property files so you do not have to repeat past diagnostics.',
+              style: TextStyle(
+                  fontWeight: FontWeight.bold, color: Colors.blue),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

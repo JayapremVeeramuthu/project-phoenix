@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -8,8 +9,8 @@ import 'package:project_phoenix_customer/core/database/sqlite_helper.dart';
 import 'package:project_phoenix_customer/features/services/domain/entities/service_item.dart';
 import 'package:project_phoenix_customer/features/booking/data/repositories/booking_repository.dart';
 import 'package:project_phoenix_customer/core/network/minio_upload_service.dart';
-import 'package:project_phoenix_customer/features/booking/data/models/booking_dto.dart';
-import 'package:project_phoenix_customer/core/network/api_client.dart';
+import 'package:shared_models/shared_models.dart';
+import 'package:shared_api/shared_api.dart';
 
 class BookingFormState {
   final List<ServiceItem> services;
@@ -315,93 +316,68 @@ class BookingNotifier extends StateNotifier<BookingFormState> {
     final bookingId = 'PHX-${const Uuid().v4().substring(0, 8).toUpperCase()}';
     final serviceIdsCombined = state.services.map((s) => s.id).join(',');
 
-    final connectivityResult = await Connectivity().checkConnectivity();
-    final isOffline = connectivityResult == ConnectivityResult.none;
-
-    if (isOffline) {
-      final offlineBooking = {
-        'local_id': bookingId,
-        'customer_id': customerId,
-        'property_id': 'b87fa109-178c-42b7-8977-628d08cb5f09',
-        'address': state.address,
-        'service_id': serviceIdsCombined,
-        'scheduled_at': state.date?.toIso8601String() ?? DateTime.now().toIso8601String(),
-        'time_slot': state.timeSlot,
-        'is_emergency': state.isEmergency ? 1 : 0,
-        'description': state.description,
-        'image_paths': state.imagePaths.join(','),
-        'voice_note_path': state.voiceNotePath ?? '',
-        'estimated_price': state.totalAmount,
-        'status': 'PENDING_SYNC',
-        'created_at': DateTime.now().toIso8601String(),
-      };
-
-      await SqliteHelper().enqueueBooking(offlineBooking);
-      state = state.copyWith(
-        isLoading: false,
-        generatedBookingId: bookingId,
-        isOfflineSaved: true,
-      );
-      return true;
-    } else {
-      try {
-        // Upload images to MinIO
-        final List<String> uploadedImageUrls = [];
-        if (!kIsWeb) {
-          for (var path in state.imagePaths) {
-            if (path.isNotEmpty) {
-              final file = File(path);
-              if (await file.exists()) {
-                final url = await _minioUploadService.uploadFile(file, 'project-phoenix');
-                uploadedImageUrls.add(url);
-              }
+    try {
+      // Try to upload images to MinIO
+      final List<String> uploadedImageUrls = [];
+      if (!kIsWeb) {
+        for (var path in state.imagePaths) {
+          if (path.isNotEmpty) {
+            final file = File(path);
+            if (await file.exists()) {
+              final url = await _minioUploadService.uploadFile(file, 'project-phoenix');
+              uploadedImageUrls.add(url);
             }
           }
         }
+      }
 
-        // Upload voice note to MinIO
-        String? voiceUrl;
-        if (!kIsWeb && state.voiceNotePath != null && state.voiceNotePath!.isNotEmpty) {
-          final file = File(state.voiceNotePath!);
-          if (await file.exists()) {
-            voiceUrl = await _minioUploadService.uploadFile(file, 'project-phoenix');
-          }
+      // Try to upload voice note to MinIO
+      String? voiceUrl;
+      if (!kIsWeb && state.voiceNotePath != null && state.voiceNotePath!.isNotEmpty) {
+        final file = File(state.voiceNotePath!);
+        if (await file.exists()) {
+          voiceUrl = await _minioUploadService.uploadFile(file, 'project-phoenix');
         }
+      }
 
-        // Fallback or retrieve default customer properties
-        final propertyId = 'b87fa109-178c-42b7-8977-628d08cb5f09'; // Default Seed Property UUID
+      // Fallback or retrieve default customer properties
+      final propertyId = 'b87fa109-178c-42b7-8977-628d08cb5f09'; // Default Seed Property UUID
 
-        final bookingDto = BookingDto(
-          localId: bookingId,
-          customerId: customerId == 'guest-id' ? 'e0e84430-6e08-46d2-b96f-e95a2e235341' : customerId,
-          propertyId: propertyId,
-          address: state.address,
-          serviceIds: state.services.map((s) => s.id).toList(),
-          scheduledAt: state.date?.toIso8601String() ?? DateTime.now().toIso8601String(),
-          timeSlot: state.timeSlot,
-          isEmergency: state.isEmergency,
-          description: state.description,
-          imagePaths: uploadedImageUrls,
-          voiceNotePath: voiceUrl,
-          voiceTranscript: state.voiceTranscript,
-          estimatedPrice: state.totalAmount,
-          latitude: state.latitude,
-          longitude: state.longitude,
-          status: 'PENDING',
-          createdAt: DateTime.now().toIso8601String(),
-        );
+      final bookingDto = BookingDto(
+        localId: bookingId,
+        customerId: customerId == 'guest-id' ? 'e0e84430-6e08-46d2-b96f-e95a2e235341' : customerId,
+        propertyId: propertyId,
+        address: state.address,
+        serviceIds: state.services.map((s) => s.id).toList(),
+        scheduledAt: state.date?.toIso8601String() ?? DateTime.now().toIso8601String(),
+        timeSlot: state.timeSlot,
+        isEmergency: state.isEmergency,
+        description: state.description.trim().isEmpty ? 'No description provided' : state.description.trim(),
+        imagePaths: uploadedImageUrls,
+        voiceNotePath: voiceUrl,
+        voiceTranscript: state.voiceTranscript,
+        estimatedPrice: state.totalAmount,
+        latitude: state.latitude,
+        longitude: state.longitude,
+        status: 'PENDING',
+        createdAt: DateTime.now().toIso8601String(),
+      );
 
-        final result = await _bookingRepository.createBooking(bookingDto);
-        await clearDraft();
+      // Verify createBooking() is calling the backend
+      final result = await _bookingRepository.createBooking(bookingDto);
+      await clearDraft();
 
-        state = state.copyWith(
-          isLoading: false,
-          generatedBookingId: result.localId ?? bookingId,
-          isOfflineSaved: false,
-        );
-        return true;
-      } catch (e) {
-        // API failed, save to offline sync queue as fallback
+      // Ensure successful booking creation returns the backend booking immediately
+      state = state.copyWith(
+        isLoading: false,
+        generatedBookingId: result.localId ?? bookingId,
+        isOfflineSaved: false,
+      );
+      return true;
+    } catch (e) {
+      // Check if it is a true network/timeout failure
+      if (_isNetworkError(e)) {
+        // Only true network failures use the SQLite offline queue
         final offlineBooking = {
           'local_id': bookingId,
           'customer_id': customerId == 'guest-id' ? 'e0e84430-6e08-46d2-b96f-e95a2e235341' : customerId,
@@ -411,7 +387,7 @@ class BookingNotifier extends StateNotifier<BookingFormState> {
           'scheduled_at': state.date?.toIso8601String() ?? DateTime.now().toIso8601String(),
           'time_slot': state.timeSlot,
           'is_emergency': state.isEmergency ? 1 : 0,
-          'description': state.description,
+          'description': state.description.trim().isEmpty ? 'No description provided' : state.description.trim(),
           'image_paths': state.imagePaths.join(','),
           'voice_note_path': state.voiceNotePath ?? '',
           'estimated_price': state.totalAmount,
@@ -426,8 +402,41 @@ class BookingNotifier extends StateNotifier<BookingFormState> {
           isOfflineSaved: true,
         );
         return true;
+      } else {
+        // It's a non-network exception (e.g. 400 Bad Request, 500, or a programming exception)
+        // We do NOT use the offline queue, and we bubble/rethrow the exception.
+        state = state.copyWith(isLoading: false);
+        rethrow;
       }
     }
+  }
+
+  bool _isNetworkError(dynamic error) {
+    if (error is DioException) {
+      if (error.type == DioExceptionType.connectionTimeout ||
+          error.type == DioExceptionType.sendTimeout ||
+          error.type == DioExceptionType.receiveTimeout ||
+          error.type == DioExceptionType.connectionError) {
+        return true;
+      }
+      if (error.type == DioExceptionType.unknown) {
+        final msg = error.message?.toLowerCase() ?? '';
+        if (msg.contains('socketexception') ||
+            msg.contains('xmlhttprequest') ||
+            error.response == null) {
+          return true;
+        }
+      }
+    } else if (error is ApiException) {
+      if (error.type == ApiExceptionType.network ||
+          error.type == ApiExceptionType.timeout) {
+        return true;
+      }
+    } else if (error.toString().toLowerCase().contains('socketexception') ||
+               error.toString().toLowerCase().contains('xmlhttprequest')) {
+      return true;
+    }
+    return false;
   }
 
   // Sync worker to process offline queue bookings

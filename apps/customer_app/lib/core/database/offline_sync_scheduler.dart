@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:project_phoenix_customer/core/database/sqlite_helper.dart';
-import 'package:project_phoenix_customer/core/network/api_client.dart';
+import 'package:shared_api/shared_api.dart';
 import 'package:project_phoenix_customer/core/network/minio_upload_service.dart';
 
 class OfflineSyncScheduler {
@@ -79,8 +79,8 @@ class OfflineSyncScheduler {
             'timeSlot': row['time_slot'],
             'isEmergency': row['is_emergency'] == 1,
             'description': row['description'] ?? '',
-            'imagePaths': remoteImageUrls,
-            'voiceNotePath': remoteVoiceUrl,
+            'imageUrls': remoteImageUrls,
+            'voiceNoteUrl': remoteVoiceUrl,
             'estimatedPrice': row['estimated_price'],
           };
 

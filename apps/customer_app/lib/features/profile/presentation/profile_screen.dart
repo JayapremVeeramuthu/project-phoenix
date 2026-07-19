@@ -6,7 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:dio/dio.dart';
 import 'package:project_phoenix_customer/core/routing/app_router.dart';
 import 'package:project_phoenix_customer/core/theme/settings_provider.dart';
-import 'package:project_phoenix_customer/core/network/api_client.dart';
+import 'package:shared_api/shared_api.dart';
 import 'package:project_phoenix_customer/features/auth/presentation/auth_notifier.dart';
 import 'package:project_phoenix_customer/features/profile/presentation/image_crop_dialog.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;

@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
 import 'package:project_phoenix_customer/core/routing/app_router.dart';
-import 'package:project_phoenix_customer/core/theme/app_theme.dart';
+import 'package:shared_theme/shared_theme.dart';
 import 'package:project_phoenix_customer/features/auth/presentation/auth_notifier.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {

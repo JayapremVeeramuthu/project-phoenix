@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:project_phoenix_customer/core/routing/app_router.dart';
-import 'package:project_phoenix_customer/core/theme/app_theme.dart';
+import 'package:shared_theme/shared_theme.dart';
 import 'package:project_phoenix_customer/core/theme/settings_provider.dart';
 import 'package:project_phoenix_customer/features/auth/presentation/auth_notifier.dart';
 import 'package:project_phoenix_customer/features/booking/presentation/booking_notifier.dart';

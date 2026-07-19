@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:project_phoenix_customer/core/network/api_client.dart';
+import 'package:shared_api/shared_api.dart';
 import 'package:project_phoenix_customer/features/booking/data/repositories/booking_repository.dart';
 import 'package:project_phoenix_customer/core/network/minio_upload_service.dart';
 import 'package:project_phoenix_customer/features/booking/presentation/booking_notifier.dart';

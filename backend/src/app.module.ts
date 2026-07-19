@@ -9,6 +9,7 @@ import { InvoiceModule } from './invoice/invoice.module';
 import { WarrantyModule } from './warranty/warranty.module';
 import { MediaModule } from './media/media.module';
 import { ProductsModule } from './products/products.module';
+import { AdminModule } from './admin/admin.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -23,6 +24,7 @@ import { HealthController } from './health.controller';
     WarrantyModule,
     MediaModule,
     ProductsModule,
+    AdminModule,
   ],
   controllers: [HealthController],
 })

@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'package:dio/dio.dart';
-import 'api_client.dart';
+import 'package:shared_api/shared_api.dart';
 
 class MinioUploadService {
   final ApiClient _apiClient;

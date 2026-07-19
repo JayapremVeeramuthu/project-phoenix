@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:project_phoenix_customer/core/network/api_client.dart';
-import 'package:project_phoenix_customer/core/network/api_exceptions.dart';
+import 'package:shared_api/shared_api.dart';
+import 'package:shared_api/shared_api.dart';
 import 'package:project_phoenix_customer/features/profile/presentation/warranties_screen.dart';
 
 class WarrantyRepository {

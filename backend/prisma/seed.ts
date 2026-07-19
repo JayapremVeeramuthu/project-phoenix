@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import * as bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
@@ -298,6 +299,225 @@ async function main() {
       },
     });
   }
+  
+  // 5. Seed default technician
+  const hashedTechPassword = await bcrypt.hash('Password', 10);
+  const defaultTechnician = await prisma.user.upsert({
+    where: { phoneNumber: '+919999999999' },
+    update: {
+      name: 'Technician Rajesh',
+      email: 'tech.rajesh@phoenix.in',
+      role: 'TECHNICIAN',
+      technicianId: 'TECH000123',
+      branch: null,
+      isOnline: true,
+      isActive: true,
+      skills: [
+        'electrical-repair', 'plumbing-repair', 'ac-service', 'home-nursing',
+        'elder-care', 'baby-care', 'physiotherapy', 'lab-sample-collection',
+        'ambulance-booking', 'medical-equipment-rental', 'pet-grooming',
+        'salon-at-home', 'bridal-makeup', 'packers-movers', 'bike-service',
+        'car-wash', 'gardening', 'tree-cutting', 'solar-installation',
+        'laptop-repair', 'computer-repair', 'mobile-repair', 'cctv-installation',
+        'wifi-setup', 'smart-lock-installation', 'photography', 'event-decoration',
+        'home-tuition'
+      ],
+      serviceAreas: [
+        'Chennai', 'OMR', 'Anna Nagar', 'Velachery', 'Adyar', 'T. Nagar',
+        'Tambaram', 'Chromepet', 'Guindy', 'Thiruvanmiyur', 'Porur', 'Medavakkam'
+      ],
+      password: hashedTechPassword,
+      mustChangePassword: false,
+    },
+    create: {
+      phoneNumber: '+919999999999',
+      name: 'Technician Rajesh',
+      email: 'tech.rajesh@phoenix.in',
+      role: 'TECHNICIAN',
+      technicianId: 'TECH000123',
+      branch: null,
+      isOnline: true,
+      isActive: true,
+      skills: [
+        'electrical-repair', 'plumbing-repair', 'ac-service', 'home-nursing',
+        'elder-care', 'baby-care', 'physiotherapy', 'lab-sample-collection',
+        'ambulance-booking', 'medical-equipment-rental', 'pet-grooming',
+        'salon-at-home', 'bridal-makeup', 'packers-movers', 'bike-service',
+        'car-wash', 'gardening', 'tree-cutting', 'solar-installation',
+        'laptop-repair', 'computer-repair', 'mobile-repair', 'cctv-installation',
+        'wifi-setup', 'smart-lock-installation', 'photography', 'event-decoration',
+        'home-tuition'
+      ],
+      serviceAreas: [
+        'Chennai', 'OMR', 'Anna Nagar', 'Velachery', 'Adyar', 'T. Nagar',
+        'Tambaram', 'Chromepet', 'Guindy', 'Thiruvanmiyur', 'Porur', 'Medavakkam'
+      ],
+      password: hashedTechPassword,
+      mustChangePassword: false,
+    },
+  });
+
+  // Seed TECH000125 (prem)
+  await prisma.user.upsert({
+    where: { technicianId: 'TECH000125' },
+    update: {
+      name: 'prem',
+      phoneNumber: '7894561231',
+      email: 'adkfsj@gmail.com',
+      role: 'TECHNICIAN',
+      branch: null,
+      isOnline: true,
+      isActive: true,
+      skills: ['ac-service', 'ac-install'],
+      serviceAreas: ['Chennai', 'OMR'],
+      password: hashedTechPassword,
+      mustChangePassword: false,
+    },
+    create: {
+      id: 'ddcf3a7c-f4d9-4d80-881e-83bcb007a497',
+      name: 'prem',
+      phoneNumber: '7894561231',
+      email: 'adkfsj@gmail.com',
+      role: 'TECHNICIAN',
+      technicianId: 'TECH000125',
+      branch: null,
+      isOnline: true,
+      isActive: true,
+      skills: ['ac-service', 'ac-install'],
+      serviceAreas: ['Chennai', 'OMR'],
+      password: hashedTechPassword,
+      mustChangePassword: false,
+    },
+  });
+
+  // 6. Seed bookings assigned to the technician
+  // Job 1: Today's Assigned Job
+  await prisma.booking.upsert({
+    where: { id: '11111111-2222-3333-4444-555555555551' },
+    update: {
+      customerId: defaultUser.id,
+      propertyId: defaultProperty.id,
+      serviceId: 'electrical-repair',
+      address: defaultProperty.address,
+      scheduledAt: new Date(),
+      timeSlot: '10:00 AM - 12:00 PM',
+      isEmergency: false,
+      description: 'Ceiling fan capacitor replacement and speed regulator check.',
+      estimatedPrice: 350.00,
+      status: 'ASSIGNED',
+      technicianId: defaultTechnician.id,
+    },
+    create: {
+      id: '11111111-2222-3333-4444-555555555551',
+      customerId: defaultUser.id,
+      propertyId: defaultProperty.id,
+      serviceId: 'electrical-repair',
+      address: defaultProperty.address,
+      scheduledAt: new Date(),
+      timeSlot: '10:00 AM - 12:00 PM',
+      isEmergency: false,
+      description: 'Ceiling fan capacitor replacement and speed regulator check.',
+      estimatedPrice: 350.00,
+      status: 'ASSIGNED',
+      technicianId: defaultTechnician.id,
+    },
+  });
+
+  // Job 2: Future / Pending Job
+  await prisma.booking.upsert({
+    where: { id: '11111111-2222-3333-4444-555555555552' },
+    update: {
+      customerId: defaultUser.id,
+      propertyId: defaultProperty.id,
+      serviceId: 'ac-service',
+      address: defaultProperty.address,
+      scheduledAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // Tomorrow
+      timeSlot: '02:00 PM - 04:00 PM',
+      isEmergency: true,
+      description: 'Regular AC filter cleaning and coolant pressure test.',
+      estimatedPrice: 600.00,
+      status: 'ASSIGNED',
+      technicianId: defaultTechnician.id,
+    },
+    create: {
+      id: '11111111-2222-3333-4444-555555555552',
+      customerId: defaultUser.id,
+      propertyId: defaultProperty.id,
+      serviceId: 'ac-service',
+      address: defaultProperty.address,
+      scheduledAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // Tomorrow
+      timeSlot: '02:00 PM - 04:00 PM',
+      isEmergency: true,
+      description: 'Regular AC filter cleaning and coolant pressure test.',
+      estimatedPrice: 600.00,
+      status: 'ASSIGNED',
+      technicianId: defaultTechnician.id,
+    },
+  });
+
+  // Job 3: Completed Job
+  await prisma.booking.upsert({
+    where: { id: '11111111-2222-3333-4444-555555555553' },
+    update: {
+      customerId: defaultUser.id,
+      propertyId: defaultProperty.id,
+      serviceId: 'plumbing-repair',
+      address: defaultProperty.address,
+      scheduledAt: new Date(Date.now() - 24 * 60 * 60 * 1000), // Yesterday
+      timeSlot: '11:00 AM - 01:00 PM',
+      isEmergency: false,
+      description: 'Leaking kitchen sink faucet replacement.',
+      estimatedPrice: 450.00,
+      status: 'COMPLETED',
+      technicianId: defaultTechnician.id,
+    },
+    create: {
+      id: '11111111-2222-3333-4444-555555555553',
+      customerId: defaultUser.id,
+      propertyId: defaultProperty.id,
+      serviceId: 'plumbing-repair',
+      address: defaultProperty.address,
+      scheduledAt: new Date(Date.now() - 24 * 60 * 60 * 1000), // Yesterday
+      timeSlot: '11:00 AM - 01:00 PM',
+      isEmergency: false,
+      description: 'Leaking kitchen sink faucet replacement.',
+      estimatedPrice: 450.00,
+      status: 'COMPLETED',
+      technicianId: defaultTechnician.id,
+    },
+  });
+
+  // Remove the old admin if exists to free up the phone number and email
+  await prisma.user.deleteMany({
+    where: {
+      OR: [
+        { email: 'admin@phoenix.in' },
+        { email: 'aspcomputereducation@gmail.com' },
+        { phoneNumber: '+919999999990' },
+      ],
+    },
+  });
+
+  // 7. Seed default admin user
+  const hashedAdminPassword = await bcrypt.hash('Aspedu@#26012026', 10);
+  await prisma.user.upsert({
+    where: { email: 'aspcomputereducation@gmail.com' },
+    update: {
+      name: 'System Admin',
+      phoneNumber: '+919999999990',
+      role: 'FOUNDER_ADMIN',
+      password: hashedAdminPassword,
+      isFounder: true,
+    },
+    create: {
+      email: 'aspcomputereducation@gmail.com',
+      name: 'System Admin',
+      phoneNumber: '+919999999990',
+      role: 'FOUNDER_ADMIN',
+      password: hashedAdminPassword,
+      isFounder: true,
+    },
+  });
 
   console.log('Database seeded successfully!');
 }

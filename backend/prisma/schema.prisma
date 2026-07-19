@@ -24,6 +24,15 @@ model User {
   avatarUrl       String?
   refreshToken    String?
   password        String?
+  technicianId    String?   @unique
+  branch          String?
+  isOnline        Boolean   @default(false)
+  skills          String[]  @default([])
+  serviceAreas    String[]  @default([])
+  experience      String?
+  isActive        Boolean   @default(true)
+  isFounder       Boolean   @default(false)
+  mustChangePassword Boolean @default(false)
   provider        String?
   isEmailVerified Boolean   @default(false)
   lastLoginAt     DateTime?
@@ -103,10 +112,13 @@ model ServiceItem {
 
 enum BookingStatus {
   PENDING
+  WAITING_FOR_TECHNICIAN
+  TECHNICIAN_ASSIGNED
   ASSIGNED
   TRAVELLING
   REACHED
   IN_PROGRESS
+  PAYMENT_PENDING
   COMPLETED
   CANCELLED
 }
@@ -130,8 +142,9 @@ model Booking {
   status         BookingStatus @default(PENDING)
   latitude       Float?
   longitude      Float?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  rejectedBy     String[]      @default([])
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
   deletedAt      DateTime?
 
   // Relations

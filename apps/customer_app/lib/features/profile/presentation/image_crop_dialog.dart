@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:project_phoenix_customer/core/theme/app_theme.dart';
+import 'package:shared_theme/shared_theme.dart';
 
 class ImageCropDialog extends StatefulWidget {
   final Uint8List imageBytes;

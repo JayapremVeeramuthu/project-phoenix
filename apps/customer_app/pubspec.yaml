@@ -1,6 +1,7 @@
 name: project_phoenix_customer
 description: Enterprise Field Service Management Platform - Customer Mobile Application
 version: 1.0.0+1
+publish_to: 'none'
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -40,6 +41,13 @@ dependencies:
 
   # Icons
   cupertino_icons: ^1.0.6
+
+  shared_theme:
+    path: ../../packages/shared_theme
+  shared_api:
+    path: ../../packages/shared_api
+  shared_models:
+    path: ../../packages/shared_models
 
   # Firebase & Google Authentication
   firebase_core: ^2.31.1

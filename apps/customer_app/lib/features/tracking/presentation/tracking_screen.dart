@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:project_phoenix_customer/core/routing/app_router.dart';
 import 'package:project_phoenix_customer/core/theme/settings_provider.dart';
+import 'package:shared_api/shared_api.dart';
 
 class TrackingScreen extends ConsumerStatefulWidget {
   final String bookingId;
@@ -16,49 +18,126 @@ class TrackingScreen extends ConsumerStatefulWidget {
   ConsumerState<TrackingScreen> createState() => _TrackingScreenState();
 }
 
-class _TrackingScreenState extends ConsumerState<TrackingScreen> {
-  int _currentTimelineStep =
-      2; // Default starting at Tech Assigned for visual preview
+class _TrackingScreenState extends ConsumerState<TrackingScreen>
+    with SingleTickerProviderStateMixin {
+  int _currentTimelineStep = 0;
+  StreamSubscription? _statusSubscription;
+
+  // Technician data – null until assigned
+  String? _technicianName;
+  String? _technicianPhone;
+  String? _technicianBranch;
+  String? _technicianDisplayId;
+
+  late AnimationController _pulseController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      fetchBookingDetails();
+      final socket = ref.read(socketServiceProvider);
+      socket.connect();
+      socket.joinRoom('booking_${widget.bookingId}');
+      _statusSubscription = socket.bookingStatusUpdatedStream.listen((event) {
+        if (mounted && event['bookingId'] == widget.bookingId) {
+          final status = event['status'] as String?;
+          final techName = event['technicianName'] as String?;
+          final techPhone = event['technicianPhone'] as String?;
+          final techBranch = event['technicianBranch'] as String?;
+          final techId = event['technicianId'] as String?;
+
+          setState(() {
+            if (techName != null) _technicianName = techName;
+            if (techPhone != null) _technicianPhone = techPhone;
+            if (techBranch != null) _technicianBranch = techBranch;
+            if (techId != null) _technicianDisplayId = techId;
+
+            _updateTimelineStep(status);
+          });
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Status update: ${_statusLabels[_currentTimelineStep]}')),
+          );
+        }
+      });
+    });
+  }
+
+  void _updateTimelineStep(String? status) {
+    if (status == null) return;
+    if (status == 'PENDING' || status == 'WAITING_FOR_TECHNICIAN') {
+      _currentTimelineStep = 0;
+    } else if (status == 'ASSIGNED' || status == 'TECHNICIAN_ASSIGNED') {
+      _currentTimelineStep = 1;
+    } else if (status == 'TRAVELLING') {
+      _currentTimelineStep = 2;
+    } else if (status == 'REACHED') {
+      _currentTimelineStep = 3;
+    } else if (status == 'IN_PROGRESS') {
+      _currentTimelineStep = 4;
+    } else if (status == 'PAYMENT_PENDING') {
+      _currentTimelineStep = 5;
+    } else if (status == 'COMPLETED') {
+      _currentTimelineStep = 5;
+    }
+  }
+
+  Future<void> fetchBookingDetails() async {
+    try {
+      final response = await ref.read(apiClientProvider).get('/bookings/${widget.bookingId}/tracking');
+      if (response.statusCode == 200 && mounted) {
+        final data = response.data;
+        final String status = data['currentStatus'];
+        final String? techName = data['technicianName'];
+        final String? techPhone = data['technicianPhone'];
+        final String? techBranch = data['technicianBranch'];
+        final String? techId = data['technicianId'];
+
+        setState(() {
+          _technicianName = techName;
+          _technicianPhone = techPhone;
+          _technicianBranch = techBranch;
+          _technicianDisplayId = techId;
+          _updateTimelineStep(status);
+        });
+      }
+    } catch (_) {}
+  }
+
+  bool get _isTechnicianAssigned => _technicianName != null && _currentTimelineStep >= 1;
+
+  @override
+  void dispose() {
+    _statusSubscription?.cancel();
+    _pulseController.dispose();
+    ref.read(socketServiceProvider).leaveRoom('booking_${widget.bookingId}');
+    super.dispose();
+  }
 
   final List<String> _statusLabels = [
-    'Booking Created',
-    'Branch Assigned',
+    'Waiting for Technician',
     'Technician Assigned',
     'Technician Travelling',
-    'Reached',
-    'Work Started',
+    'Technician Reached',
+    'Work In Progress',
     'Completed',
-    'Invoice Generated',
-    'Feedback Pending',
   ];
 
   IconData _getStepIcon(int index) {
     switch (index) {
-      case 0: return Icons.receipt_long_rounded;
-      case 1: return Icons.corporate_fare_rounded;
-      case 2: return Icons.person_pin_rounded;
-      case 3: return Icons.directions_car_rounded;
-      case 4: return Icons.home_work_rounded;
-      case 5: return Icons.play_circle_fill_rounded;
-      case 6: return Icons.task_alt_rounded;
-      case 7: return Icons.receipt_rounded;
-      case 8: return Icons.rate_review_rounded;
+      case 0: return Icons.person_search_rounded;
+      case 1: return Icons.person_pin_rounded;
+      case 2: return Icons.directions_car_rounded;
+      case 3: return Icons.home_work_rounded;
+      case 4: return Icons.play_circle_fill_rounded;
+      case 5: return Icons.task_alt_rounded;
       default: return Icons.circle;
-    }
-  }
-
-  String _getMockTimestamp(int index) {
-    switch (index) {
-      case 0: return '10:15 AM';
-      case 1: return '10:22 AM';
-      case 2: return '10:30 AM';
-      case 3: return '10:45 AM';
-      case 4: return '11:00 AM';
-      case 5: return '11:05 AM';
-      case 6: return '11:30 AM';
-      case 7: return '11:35 AM';
-      case 8: return '11:40 AM';
-      default: return '';
     }
   }
 
@@ -70,71 +149,37 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          'Track Request: ${widget.bookingId}',
+          'Track Request',
           style: TextStyle(
               fontWeight: FontWeight.bold, fontSize: isSeniorMode ? 22 : 18),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              setState(() {
-                if (_currentTimelineStep < 8) {
-                  _currentTimelineStep++;
-                } else {
-                  _currentTimelineStep = 0;
-                }
-              });
-            },
-          ),
-        ],
       ),
       body: SingleChildScrollView(
         child: Column(
           children: [
-            // Map Mock Layout
+            // Map Placeholder
             Container(
-              height: 250,
+              height: 200,
               color: Colors.blueGrey.shade100,
-              child: Stack(
-                children: [
-                  Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.map_rounded,
-                            size: 48, color: Colors.blueGrey.shade700),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Google Maps Live Tracking API Ready',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        const Text(
-                          'Displaying routes from Branch #04 to Client site',
-                          style: TextStyle(fontSize: 12, color: Colors.black54),
-                        ),
-                      ],
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.map_rounded,
+                        size: 48, color: Colors.blueGrey.shade700),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Live Tracking',
+                      style: TextStyle(fontWeight: FontWeight.bold),
                     ),
-                  ),
-                  // Map Pin simulation
-                  const Positioned(
-                    top: 80,
-                    left: 120,
-                    child:
-                        Icon(Icons.location_city, color: Colors.teal, size: 36),
-                  ),
-                  const Positioned(
-                    bottom: 70,
-                    right: 140,
-                    child: Icon(Icons.directions_car,
-                        color: Colors.orange, size: 32),
-                  ),
-                  const Positioned(
-                    bottom: 30,
-                    right: 80,
-                    child: Icon(Icons.home, color: Colors.teal, size: 36),
-                  ),
-                ],
+                    Text(
+                      _isTechnicianAssigned
+                          ? 'Tracking ${_technicianName ?? "technician"}'
+                          : 'Awaiting technician assignment...',
+                      style: const TextStyle(fontSize: 12, color: Colors.black54),
+                    ),
+                  ],
+                ),
               ),
             ),
 
@@ -143,120 +188,49 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Technician Info Card
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        children: [
-                          Row(
-                            children: [
-                              CircleAvatar(
-                                radius: isSeniorMode ? 32 : 24,
-                                backgroundColor: Theme.of(context)
-                                    .colorScheme
-                                    .primaryContainer,
-                                child: Icon(Icons.person,
-                                    size: isSeniorMode ? 32 : 24),
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Karthik Raja',
-                                      style: TextStyle(
-                                        fontSize: isSeniorMode ? 20 : 16,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    const Text('Branch #04 - Anna Nagar'),
-                                    const Row(
-                                      children: [
-                                        Icon(Icons.star,
-                                            color: Colors.amber, size: 16),
-                                        SizedBox(width: 4),
-                                        Text('4.9 (142 reviews)',
-                                            style: TextStyle(
-                                                fontWeight: FontWeight.bold)),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: ElevatedButton.icon(
-                                  onPressed: () {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                          content: Text(
-                                              'Calling +91 94440 12345 (Simulated)')),
-                                    );
-                                  },
-                                  icon: const Icon(Icons.phone),
-                                  label: const Text('Call'),
-                                  style: ElevatedButton.styleFrom(
-                                    minimumSize: Size(double.infinity,
-                                        isSeniorMode ? 56 : 44),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed: () {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                          content:
-                                              Text('Opening Chat (Simulated)')),
-                                    );
-                                  },
-                                  icon: const Icon(Icons.chat_bubble_outline),
-                                  label: const Text('Chat'),
-                                  style: OutlinedButton.styleFrom(
-                                    minimumSize: Size(double.infinity,
-                                        isSeniorMode ? 56 : 44),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                  // Technician Info Card – conditional rendering
+                  _isTechnicianAssigned
+                      ? _buildAssignedTechnicianCard(isSeniorMode, context)
+                      : _buildSearchingCard(isSeniorMode, context),
                   const SizedBox(height: 16),
 
-                  // ETA Banner
+                  // Status Banner
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.primaryContainer,
+                      color: _isTechnicianAssigned
+                          ? Theme.of(context).colorScheme.primaryContainer
+                          : Colors.orange.shade50,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.timelapse, color: Colors.teal),
+                        Icon(
+                          _isTechnicianAssigned
+                              ? Icons.timelapse
+                              : Icons.hourglass_top_rounded,
+                          color: _isTechnicianAssigned
+                              ? Colors.teal
+                              : Colors.orange.shade700,
+                        ),
                         const SizedBox(width: 12),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Estimated Time of Arrival',
-                                style: TextStyle(fontSize: 12)),
-                            Text(
-                              _currentTimelineStep >= 6
-                                  ? 'Arrived / Completed'
-                                  : '15 Minutes (1.8 km away)',
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.bold, fontSize: 16),
-                            ),
-                          ],
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _isTechnicianAssigned
+                                    ? 'Current Status'
+                                    : 'Booking Status',
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                              Text(
+                                _statusLabels[_currentTimelineStep],
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold, fontSize: 16),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
@@ -337,40 +311,21 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        _statusLabels[index],
-                                        style: TextStyle(
-                                          fontWeight: isActive
-                                              ? FontWeight.bold
-                                              : FontWeight.normal,
-                                          color: isCurrent
-                                              ? theme.colorScheme.primary
-                                              : (isActive
-                                                  ? (isDarkMode
-                                                      ? Colors.white
-                                                      : Colors.black87)
-                                                  : Colors.grey),
-                                          fontSize: isSeniorMode ? 18 : 15,
-                                        ),
-                                      ),
-                                      if (isActive)
-                                        Text(
-                                          _getMockTimestamp(index),
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: isCurrent
-                                                ? theme.colorScheme.primary
-                                                : Colors.grey.shade600,
-                                            fontWeight: isCurrent
-                                                ? FontWeight.bold
-                                                : FontWeight.normal,
-                                          ),
-                                        ),
-                                    ],
+                                  Text(
+                                    _statusLabels[index],
+                                    style: TextStyle(
+                                      fontWeight: isActive
+                                          ? FontWeight.bold
+                                          : FontWeight.normal,
+                                      color: isCurrent
+                                          ? theme.colorScheme.primary
+                                          : (isActive
+                                              ? (isDarkMode
+                                                  ? Colors.white
+                                                  : Colors.black87)
+                                              : Colors.grey),
+                                      fontSize: isSeniorMode ? 18 : 15,
+                                    ),
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
@@ -395,7 +350,7 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                     }),
                   ),
 
-                  if (_currentTimelineStep >= 6) ...[
+                  if (_currentTimelineStep >= 5) ...[
                     const SizedBox(height: 32),
                     ElevatedButton(
                       onPressed: () {
@@ -407,6 +362,134 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                 ],
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Pulsing searching card while waiting for a technician
+  Widget _buildSearchingCard(bool isSeniorMode, BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 28.0, horizontal: 16.0),
+        child: Column(
+          children: [
+            AnimatedBuilder(
+              animation: _pulseController,
+              builder: (context, child) {
+                return Opacity(
+                  opacity: 0.4 + (_pulseController.value * 0.6),
+                  child: Icon(
+                    Icons.person_search_rounded,
+                    size: isSeniorMode ? 48 : 40,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Searching for an available technician...',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: isSeniorMode ? 17 : 14,
+                fontWeight: FontWeight.w600,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'You will be notified once a technician accepts.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            ),
+            const SizedBox(height: 12),
+            LinearProgressIndicator(
+              backgroundColor: Colors.grey.shade200,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                  Theme.of(context).colorScheme.primary),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Real technician info card – only shown after acceptance
+  Widget _buildAssignedTechnicianCard(bool isSeniorMode, BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: isSeniorMode ? 32 : 24,
+                  backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                  child: Icon(Icons.person, size: isSeniorMode ? 32 : 24),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _technicianName ?? '',
+                        style: TextStyle(
+                          fontSize: isSeniorMode ? 20 : 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      if (_technicianDisplayId != null && _technicianDisplayId!.isNotEmpty)
+                        Text(
+                          'ID: $_technicianDisplayId',
+                          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                        ),
+                      if (_technicianBranch != null && _technicianBranch!.isNotEmpty)
+                        Text(_technicianBranch!),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (_technicianPhone != null && _technicianPhone!.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Calling $_technicianPhone...')),
+                        );
+                      },
+                      icon: const Icon(Icons.phone),
+                      label: const Text('Call'),
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: Size(double.infinity, isSeniorMode ? 56 : 44),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Opening chat...')),
+                        );
+                      },
+                      icon: const Icon(Icons.chat_bubble_outline),
+                      label: const Text('Chat'),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: Size(double.infinity, isSeniorMode ? 56 : 44),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),

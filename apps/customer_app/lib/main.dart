@@ -5,7 +5,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:project_phoenix_customer/firebase_options.dart';
 import 'package:project_phoenix_customer/core/localization/app_localizations.dart';
 import 'package:project_phoenix_customer/core/routing/app_router.dart';
-import 'package:project_phoenix_customer/core/theme/app_theme.dart';
+import 'package:shared_theme/shared_theme.dart';
 import 'package:project_phoenix_customer/core/theme/settings_provider.dart';
 
 void main() async {
