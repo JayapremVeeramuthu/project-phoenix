@@ -5,8 +5,8 @@ import 'package:dio/dio.dart';
 void main() {
   group('ApiClient and ApiException Tests', () {
     test('ApiClient initialization with correct baseUrl', () {
-      final client = ApiClient(baseUrl: 'https://test-api.phoenix.in/api/v1');
-      expect(client.dio.options.baseUrl, 'https://test-api.phoenix.in/api/v1');
+      final client = ApiClient(baseUrl: 'https://api.aspsolarenterprise.com/api/v1');
+      expect(client.dio.options.baseUrl, 'https://api.aspsolarenterprise.com/api/v1');
     });
 
     test('ApiException mapping for BadRequest', () {

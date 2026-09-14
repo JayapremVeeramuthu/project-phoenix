@@ -14,7 +14,7 @@ void main() {
 
     setUp(() {
       FlutterSecureStorage.setMockInitialValues({});
-      apiClient = ApiClient(baseUrl: 'https://api.phoenix-fieldservice.in/api/v1');
+      apiClient = ApiClient(baseUrl: 'https://api.aspsolarenterprise.com/api/v1');
       apiClient.dio.interceptors.insert(
         0,
         InterceptorsWrapper(

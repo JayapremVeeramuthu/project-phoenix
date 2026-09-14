@@ -7,11 +7,11 @@ import 'package:socket_io_client/socket_io_client.dart' as io;
 
 class AppConfig {
   /// The base URL of the backend server.
-  /// Defaults to 'http://localhost:3000' in development.
+  /// Defaults to 'https://api.aspsolarenterprise.com'.
   /// Can be overridden in production using `--dart-define=BASE_URL=https://your-production-url.com`.
   static const String baseUrl = String.fromEnvironment(
     'BASE_URL',
-    defaultValue: 'http://localhost:3000',
+    defaultValue: 'https://api.aspsolarenterprise.com',
   );
 
   /// The full API endpoint base URL.

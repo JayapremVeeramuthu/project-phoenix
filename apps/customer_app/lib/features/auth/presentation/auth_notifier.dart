@@ -453,24 +453,67 @@ class AuthNotifier extends StateNotifier<AuthState> {
     String? stateName,
     String? pincode,
   }) async {
-    final userId = state.userId;
-    if (userId == null) return false;
+    // 1. Resolve userId: state -> storage (user_id) -> storage (firebase_uid) -> firebaseService
+    var userId = state.userId;
+    if (userId == null || userId.isEmpty) {
+      userId = await _storage.read(key: 'user_id');
+    }
+    if (userId == null || userId.isEmpty) {
+      userId = await _storage.read(key: 'firebase_uid');
+    }
+    if (userId == null || userId.isEmpty) {
+      userId = _firebaseService.currentUser?.uid;
+    }
+
+    final effectiveCity = city ?? '';
+    final effectiveState = stateName ?? '';
+    final effectivePincode = pincode ?? '';
+
+    // If still no userId, but user is guest / unauthenticated:
+    // Persist address locally so guest can browse with local address on HomeScreen
+    if (userId == null || userId.isEmpty) {
+      debugPrint('[AUTH] updateAddress: Guest/Unauthenticated mode. Saving address locally.');
+      await _storage.write(key: 'user_address', value: address);
+      await _storage.write(key: 'user_city', value: effectiveCity);
+      await _storage.write(key: 'user_state', value: effectiveState);
+      await _storage.write(key: 'user_pincode', value: effectivePincode);
+
+      state = state.copyWith(
+        isLoading: false,
+        error: null,
+        address: address,
+        city: effectiveCity,
+        state: effectiveState,
+        pincode: effectivePincode,
+      );
+      return true;
+    }
+
     state = state.copyWith(isLoading: true, error: null);
 
+    final payload = {
+      'userId': userId,
+      'address': address,
+      'city': effectiveCity,
+      'state': effectiveState,
+      'pincode': effectivePincode,
+    };
+
+    debugPrint('[AUTH] HTTP Method: PUT');
+    debugPrint('[AUTH] Endpoint: /auth/profile');
+    debugPrint('[AUTH] Payload: $payload');
+
     try {
-      final response = await _apiClient.put('/auth/profile', data: {
-        'userId': userId,
-        'address': address,
-        'city': city ?? '',
-        'state': stateName ?? '',
-        'pincode': pincode ?? '',
-      });
+      final response = await _apiClient.put('/auth/profile', data: payload);
+
+      debugPrint('[AUTH] Status code: ${response.statusCode}');
+      debugPrint('[AUTH] Response: ${response.data}');
 
       final userMap = response.data;
       final savedAddress = userMap['address'] as String? ?? address;
-      final savedCity = userMap['city'] as String? ?? (city ?? '');
-      final savedState = userMap['state'] as String? ?? (stateName ?? '');
-      final savedPincode = userMap['pincode'] as String? ?? (pincode ?? '');
+      final savedCity = userMap['city'] as String? ?? effectiveCity;
+      final savedState = userMap['state'] as String? ?? effectiveState;
+      final savedPincode = userMap['pincode'] as String? ?? effectivePincode;
 
       await _storage.write(key: 'user_address', value: savedAddress);
       await _storage.write(key: 'user_city', value: savedCity);
@@ -479,6 +522,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
       state = state.copyWith(
         isLoading: false,
+        userId: userMap['id'] as String? ?? userId,
         address: savedAddress,
         city: savedCity,
         state: savedState,
@@ -486,17 +530,43 @@ class AuthNotifier extends StateNotifier<AuthState> {
       );
       return true;
     } catch (e) {
+      debugPrint('[AUTH] Error updating address: $e');
+      final errorMsg = e is ApiException
+          ? 'Failed to update address: [${e.statusCode}] ${e.message}'
+          : 'Failed to update address: ${e.toString()}';
       state = state.copyWith(
         isLoading: false,
-        error: 'Failed to update address: ${e.toString()}',
+        error: errorMsg,
       );
       return false;
     }
   }
 
   Future<bool> deleteAddress() async {
-    final userId = state.userId;
-    if (userId == null) return false;
+    var userId = state.userId;
+    if (userId == null || userId.isEmpty) {
+      userId = await _storage.read(key: 'user_id');
+    }
+    if (userId == null || userId.isEmpty) {
+      userId = await _storage.read(key: 'firebase_uid');
+    }
+    if (userId == null || userId.isEmpty) {
+      userId = _firebaseService.currentUser?.uid;
+    }
+
+    if (userId == null || userId.isEmpty) {
+      await _storage.delete(key: 'user_address');
+      await _storage.delete(key: 'user_city');
+      await _storage.delete(key: 'user_state');
+      await _storage.delete(key: 'user_pincode');
+
+      state = state.copyWith(
+        isLoading: false,
+        clearAddress: true,
+      );
+      return true;
+    }
+
     state = state.copyWith(isLoading: true, error: null);
 
     try {

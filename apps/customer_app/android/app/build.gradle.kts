@@ -9,7 +9,7 @@ plugins {
 
 android {
     namespace = "com.example.project_phoenix_customer"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

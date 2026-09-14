@@ -159,12 +159,17 @@ class _AddressSelectionSheetState extends ConsumerState<AddressSelectionSheet> {
     final stateName = _stateController.text.trim();
     final pincode = _pincodeController.text.trim();
 
+    debugPrint('[ADDRESS_SHEET] _saveAddress triggered');
+    debugPrint('[ADDRESS_SHEET] fullAddress="$fullAddress", city="$city", state="$stateName", pincode="$pincode"');
+
     final success = await ref.read(authNotifierProvider.notifier).updateAddress(
       address: fullAddress,
       city: city,
       stateName: stateName,
       pincode: pincode,
     );
+
+    debugPrint('[ADDRESS_SHEET] updateAddress returned: success=$success');
 
     if (mounted) {
       setState(() {
@@ -181,6 +186,7 @@ class _AddressSelectionSheetState extends ConsumerState<AddressSelectionSheet> {
         );
       } else {
         final error = ref.read(authNotifierProvider).error ?? 'Failed to save address';
+        debugPrint('[ADDRESS_SHEET] Address save failed: $error');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(error),
@@ -297,24 +303,32 @@ class _AddressSelectionSheetState extends ConsumerState<AddressSelectionSheet> {
                             ],
                           ),
                         ),
-                        ElevatedButton(
-                          onPressed: _isFetchingLocation ? null : _fetchCurrentLocation,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppTheme.primaryTeal,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                            elevation: 0,
+                        const SizedBox(width: 8),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(
+                            minWidth: 80,
+                            maxWidth: 120,
                           ),
-                          child: _isFetchingLocation
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Text('Locate Me', style: TextStyle(fontWeight: FontWeight.bold)),
+                          child: ElevatedButton(
+                            onPressed: _isFetchingLocation ? null : _fetchCurrentLocation,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppTheme.primaryTeal,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              minimumSize: Size.zero,
+                              elevation: 0,
+                            ),
+                            child: _isFetchingLocation
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Text('Locate Me', style: TextStyle(fontWeight: FontWeight.bold)),
+                          ),
                         ),
                       ],
                     ),

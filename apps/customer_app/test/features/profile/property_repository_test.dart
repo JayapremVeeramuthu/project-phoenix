@@ -10,7 +10,7 @@ void main() {
 
     setUp(() {
       apiClient =
-          ApiClient(baseUrl: 'https://api.phoenix-fieldservice.in/api/v1');
+          ApiClient(baseUrl: 'https://api.aspsolarenterprise.com/api/v1');
       repository = PropertyRepository(apiClient);
     });
 

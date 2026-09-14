@@ -14,7 +14,7 @@ class FakeSocketService extends SocketService {
   final StreamController<Map<String, dynamic>> _statusController =
       StreamController<Map<String, dynamic>>.broadcast();
 
-  FakeSocketService() : super(url: 'http://localhost:3000');
+  FakeSocketService() : super(url: AppConfig.socketUrl);
 
   @override
   Stream<Map<String, dynamic>> get bookingStatusUpdatedStream => _statusController.stream;
@@ -44,7 +44,7 @@ class FakeSocketService extends SocketService {
 }
 
 class FakeBookingRepository extends BookingRepository {
-  FakeBookingRepository() : super(ApiClient(baseUrl: 'http://localhost:3000/api/v1'));
+  FakeBookingRepository() : super(ApiClient(baseUrl: AppConfig.apiUrl));
 
   @override
   Future<Map<String, dynamic>> getBookingTracking(String bookingId) async {

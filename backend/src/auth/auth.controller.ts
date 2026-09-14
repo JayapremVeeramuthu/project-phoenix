@@ -120,7 +120,10 @@ export class AuthController {
   @Put('profile')
   @ApiOperation({ summary: 'Update user profile details' })
   async updateProfile(@Body() dto: UpdateProfileDto) {
-    return this.authService.updateProfile(dto);
+    console.log(`[AUTH] PUT /api/v1/auth/profile received: userId=${dto.userId}, address=${dto.address}, city=${dto.city}, state=${dto.state}, pincode=${dto.pincode}`);
+    const result = await this.authService.updateProfile(dto);
+    console.log(`[AUTH] PUT /api/v1/auth/profile success: updated user id=${result.id}`);
+    return result;
   }
 
   @Delete('address')

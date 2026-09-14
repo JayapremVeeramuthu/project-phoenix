@@ -206,19 +206,29 @@ export class AuthService implements OnModuleInit {
     }
   }
 
-  async logout(userId: string) {
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { refreshToken: null },
+  private async findUserByIdOrFirebaseUid(userId: string) {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
+    return this.prisma.user.findFirst({
+      where: isUuid ? { OR: [{ id: userId }, { firebaseUid: userId }] } : { firebaseUid: userId },
     });
+  }
 
-    await this.prisma.auditLog.create({
-      data: {
-        userId,
-        action: 'USER_LOGOUT',
-        details: `User logged out: ${userId}`,
-      },
-    });
+  async logout(userId: string) {
+    const user = await this.findUserByIdOrFirebaseUid(userId);
+    if (user) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { refreshToken: null },
+      });
+
+      await this.prisma.auditLog.create({
+        data: {
+          userId: user.id,
+          action: 'USER_LOGOUT',
+          details: `User logged out: ${user.id}`,
+        },
+      });
+    }
 
     return { message: 'Logout successful.' };
   }
@@ -247,9 +257,7 @@ export class AuthService implements OnModuleInit {
   }
 
   async getProfile(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-    });
+    const user = await this.findUserByIdOrFirebaseUid(userId);
     if (!user) {
       throw new BadRequestException('User not found.');
     }
@@ -258,9 +266,7 @@ export class AuthService implements OnModuleInit {
 
   async updateProfile(dto: UpdateProfileDto) {
     const { userId, ...fields } = dto;
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-    });
+    const user = await this.findUserByIdOrFirebaseUid(userId);
     if (!user) {
       throw new BadRequestException('User not found.');
     }
@@ -272,13 +278,13 @@ export class AuthService implements OnModuleInit {
     }
 
     const updatedUser = await this.prisma.user.update({
-      where: { id: userId },
+      where: { id: user.id },
       data: fields,
     });
 
     await this.prisma.auditLog.create({
       data: {
-        userId,
+        userId: user.id,
         action: 'UPDATE_PROFILE',
         details: `Updated profile details: ${Object.keys(fields).join(', ')}`,
       },
@@ -288,15 +294,13 @@ export class AuthService implements OnModuleInit {
   }
 
   async deleteAddress(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-    });
+    const user = await this.findUserByIdOrFirebaseUid(userId);
     if (!user) {
       throw new BadRequestException('User not found.');
     }
 
     const updatedUser = await this.prisma.user.update({
-      where: { id: userId },
+      where: { id: user.id },
       data: {
         address: null,
         city: null,
@@ -307,7 +311,7 @@ export class AuthService implements OnModuleInit {
 
     await this.prisma.auditLog.create({
       data: {
-        userId,
+        userId: user.id,
         action: 'DELETE_ADDRESS',
         details: 'User address deleted from database',
       },
