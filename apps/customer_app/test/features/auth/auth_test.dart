@@ -94,7 +94,7 @@ void main() {
 
     setUp(() {
       FlutterSecureStorage.setMockInitialValues({});
-      apiClient = ApiClient(baseUrl: 'http://localhost:3000/api/v1');
+      apiClient = ApiClient(baseUrl: AppConfig.apiUrl);
       apiClient.dio.interceptors.add(InterceptorsWrapper(
         onRequest: (options, handler) {
           if (options.path.contains('/auth/login') || options.path.contains('/auth/email-login')) {
@@ -129,6 +129,37 @@ void main() {
               requestOptions: options,
               statusCode: 200,
               data: {'message': 'Logout success'},
+            ));
+          } else if (options.path.contains('/auth/profile') && options.method == 'PUT') {
+            final data = options.data as Map<String, dynamic>;
+            handler.resolve(Response(
+              requestOptions: options,
+              statusCode: 200,
+              data: {
+                'id': 'cust-uuid-112233',
+                'name': 'Rajesh Kumar',
+                'email': 'test@phoenix.in',
+                'phoneNumber': '+919876543210',
+                'address': data['address'],
+                'city': data['city'],
+                'state': data['state'],
+                'pincode': data['pincode'],
+              },
+            ));
+          } else if (options.path.contains('/auth/address') && options.method == 'DELETE') {
+            handler.resolve(Response(
+              requestOptions: options,
+              statusCode: 200,
+              data: {
+                'id': 'cust-uuid-112233',
+                'name': 'Rajesh Kumar',
+                'email': 'test@phoenix.in',
+                'phoneNumber': '+919876543210',
+                'address': null,
+                'city': null,
+                'state': null,
+                'pincode': null,
+              },
             ));
           } else {
             handler.next(options);
@@ -176,6 +207,46 @@ void main() {
       await authNotifier.logout();
       expect(authNotifier.state.isAuthenticated, false);
       expect(authNotifier.state.userEmail, null);
+    });
+
+    test('updateAddress saves new address to state and database', () async {
+      shouldSucceed = true;
+      await authNotifier.loginWithEmail('test@phoenix.in', 'password123');
+
+      final success = await authNotifier.updateAddress(
+        address: 'No. 42 Gandhi Mandapam Road',
+        city: 'Chennai',
+        stateName: 'Tamil Nadu',
+        pincode: '600025',
+      );
+
+      expect(success, true);
+      expect(authNotifier.state.address, 'No. 42 Gandhi Mandapam Road');
+      expect(authNotifier.state.city, 'Chennai');
+      expect(authNotifier.state.state, 'Tamil Nadu');
+      expect(authNotifier.state.pincode, '600025');
+    });
+
+    test('deleteAddress removes address from state and resets fields to null', () async {
+      shouldSucceed = true;
+      await authNotifier.loginWithEmail('test@phoenix.in', 'password123');
+
+      // Update address first
+      await authNotifier.updateAddress(
+        address: 'No. 42 Gandhi Mandapam Road',
+        city: 'Chennai',
+        stateName: 'Tamil Nadu',
+        pincode: '600025',
+      );
+      expect(authNotifier.state.address, 'No. 42 Gandhi Mandapam Road');
+
+      // Now delete address
+      final deleteSuccess = await authNotifier.deleteAddress();
+      expect(deleteSuccess, true);
+      expect(authNotifier.state.address, null);
+      expect(authNotifier.state.city, null);
+      expect(authNotifier.state.state, null);
+      expect(authNotifier.state.pincode, null);
     });
   });
 }

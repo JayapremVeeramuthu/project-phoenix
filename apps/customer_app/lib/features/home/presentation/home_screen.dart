@@ -10,6 +10,7 @@ import 'package:project_phoenix_customer/features/services/data/repositories/ser
 import 'package:project_phoenix_customer/core/database/sqlite_helper.dart';
 import 'package:project_phoenix_customer/core/widgets/offline_banner.dart';
 import 'package:project_phoenix_customer/core/widgets/shimmer_loader.dart';
+import 'package:project_phoenix_customer/features/profile/presentation/widgets/address_selection_sheet.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -57,10 +58,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final isSeniorMode =
         ref.watch(settingsProvider.select((s) => s.isSeniorMode));
     final locale = ref.watch(settingsProvider.select((s) => s.locale));
+    final authState = ref.watch(authNotifierProvider);
     final categories = ref.watch(servicesRepositoryProvider).getCategories();
     final searchResults = ref
         .watch(servicesRepositoryProvider)
         .searchServices(_searchQuery, locale);
+
+    final bool hasAddress = authState.address != null && authState.address!.trim().isNotEmpty;
+    final String addressLabel = hasAddress
+        ? '${authState.address}${authState.city != null && authState.city!.isNotEmpty ? ', ' + authState.city! : ''}'
+        : 'No address set • Tap to add';
 
     return OfflineBanner(
       child: Scaffold(
@@ -75,15 +82,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     fontSize: 16,
                     letterSpacing: 1.0),
               ),
-              Row(
-                children: [
-                  const Icon(Icons.location_on, size: 12, color: Colors.teal),
-                  const SizedBox(width: 4),
-                  Text(
-                    'OMR Road, Chennai',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                  ),
-                ],
+              InkWell(
+                onTap: () => AddressSelectionSheet.show(context),
+                borderRadius: BorderRadius.circular(4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      hasAddress ? Icons.location_on : Icons.add_location_alt_outlined,
+                      size: 13,
+                      color: hasAddress ? Colors.teal : Colors.orange.shade700,
+                    ),
+                    const SizedBox(width: 4),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 200),
+                      child: Text(
+                        addressLabel,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: hasAddress ? Colors.grey.shade700 : Colors.orange.shade800,
+                          fontWeight: hasAddress ? FontWeight.normal : FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 2),
+                    Icon(Icons.keyboard_arrow_down, size: 14, color: Colors.grey.shade600),
+                  ],
+                ),
               ),
             ],
           ),

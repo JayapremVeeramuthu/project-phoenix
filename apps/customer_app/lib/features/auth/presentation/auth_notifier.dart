@@ -62,6 +62,7 @@ class AuthState {
     String? provider,
     String? error,
     bool? isLoading,
+    bool clearAddress = false,
   }) {
     return AuthState(
       isAuthenticated: isAuthenticated ?? this.isAuthenticated,
@@ -74,10 +75,10 @@ class AuthState {
       userAvatar: userAvatar ?? this.userAvatar,
       gender: gender ?? this.gender,
       dateOfBirth: dateOfBirth ?? this.dateOfBirth,
-      address: address ?? this.address,
-      city: city ?? this.city,
-      state: state ?? this.state,
-      pincode: pincode ?? this.pincode,
+      address: clearAddress ? null : (address ?? this.address),
+      city: clearAddress ? null : (city ?? this.city),
+      state: clearAddress ? null : (state ?? this.state),
+      pincode: clearAddress ? null : (pincode ?? this.pincode),
       provider: provider ?? this.provider,
       error: error,
       isLoading: isLoading ?? this.isLoading,
@@ -441,6 +442,80 @@ class AuthNotifier extends StateNotifier<AuthState> {
       state = state.copyWith(
         isLoading: false,
         error: 'Failed to update avatar: ${e.toString()}',
+      );
+      return false;
+    }
+  }
+
+  Future<bool> updateAddress({
+    required String address,
+    String? city,
+    String? stateName,
+    String? pincode,
+  }) async {
+    final userId = state.userId;
+    if (userId == null) return false;
+    state = state.copyWith(isLoading: true, error: null);
+
+    try {
+      final response = await _apiClient.put('/auth/profile', data: {
+        'userId': userId,
+        'address': address,
+        'city': city ?? '',
+        'state': stateName ?? '',
+        'pincode': pincode ?? '',
+      });
+
+      final userMap = response.data;
+      final savedAddress = userMap['address'] as String? ?? address;
+      final savedCity = userMap['city'] as String? ?? (city ?? '');
+      final savedState = userMap['state'] as String? ?? (stateName ?? '');
+      final savedPincode = userMap['pincode'] as String? ?? (pincode ?? '');
+
+      await _storage.write(key: 'user_address', value: savedAddress);
+      await _storage.write(key: 'user_city', value: savedCity);
+      await _storage.write(key: 'user_state', value: savedState);
+      await _storage.write(key: 'user_pincode', value: savedPincode);
+
+      state = state.copyWith(
+        isLoading: false,
+        address: savedAddress,
+        city: savedCity,
+        state: savedState,
+        pincode: savedPincode,
+      );
+      return true;
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        error: 'Failed to update address: ${e.toString()}',
+      );
+      return false;
+    }
+  }
+
+  Future<bool> deleteAddress() async {
+    final userId = state.userId;
+    if (userId == null) return false;
+    state = state.copyWith(isLoading: true, error: null);
+
+    try {
+      await _apiClient.delete('/auth/address?userId=$userId');
+
+      await _storage.delete(key: 'user_address');
+      await _storage.delete(key: 'user_city');
+      await _storage.delete(key: 'user_state');
+      await _storage.delete(key: 'user_pincode');
+
+      state = state.copyWith(
+        isLoading: false,
+        clearAddress: true,
+      );
+      return true;
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        error: 'Failed to delete address: ${e.toString()}',
       );
       return false;
     }

@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Put, Body, HttpCode, HttpStatus, UseGuards, Query } from '@nestjs/common';
+import { Controller, Post, Get, Put, Delete, Body, HttpCode, HttpStatus, UseGuards, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { FirebaseTokenDto } from './dto/firebase-token.dto';
@@ -121,6 +121,12 @@ export class AuthController {
   @ApiOperation({ summary: 'Update user profile details' })
   async updateProfile(@Body() dto: UpdateProfileDto) {
     return this.authService.updateProfile(dto);
+  }
+
+  @Delete('address')
+  @ApiOperation({ summary: 'Delete user address' })
+  async deleteAddress(@Query('userId') userId: string) {
+    return this.authService.deleteAddress(userId);
   }
 
   @Post('technician/change-password')

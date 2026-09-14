@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_api/shared_api.dart';
 
 class UploadProgressInfo {
   final int sent;
@@ -22,7 +23,7 @@ class MediaService {
   final ImagePicker _picker = ImagePicker();
 
   MediaService({Dio? dio, Connectivity? connectivity})
-      : _dio = dio ?? Dio(BaseOptions(baseUrl: 'http://localhost:3000/api/v1')),
+      : _dio = dio ?? Dio(BaseOptions(baseUrl: AppConfig.apiUrl)),
         _connectivity = connectivity ?? Connectivity() {
     _monitorNetworkAndSync();
   }

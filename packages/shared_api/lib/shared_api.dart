@@ -5,6 +5,32 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 
+class AppConfig {
+  /// The base URL of the backend server.
+  /// Defaults to 'http://localhost:3000' in development.
+  /// Can be overridden in production using `--dart-define=BASE_URL=https://your-production-url.com`.
+  static const String baseUrl = String.fromEnvironment(
+    'BASE_URL',
+    defaultValue: 'http://localhost:3000',
+  );
+
+  /// The full API endpoint base URL.
+  /// Automatically derived from baseUrl: `${baseUrl}/api/v1`.
+  /// Can be explicitly overridden using `--dart-define=API_URL=https://your-production-url.com/api/v1`.
+  static const String apiUrl = String.fromEnvironment(
+    'API_URL',
+    defaultValue: '$baseUrl/api/v1',
+  );
+
+  /// The Socket.IO connection URL.
+  /// Automatically derived from baseUrl.
+  /// Can be explicitly overridden using `--dart-define=SOCKET_URL=https://your-production-url.com`.
+  static const String socketUrl = String.fromEnvironment(
+    'SOCKET_URL',
+    defaultValue: baseUrl,
+  );
+}
+
 enum ApiExceptionType {
   network,
   timeout,
@@ -247,7 +273,7 @@ class ApiClient {
 }
 
 final apiClientProvider = Provider<ApiClient>((ref) {
-  return ApiClient(baseUrl: 'http://localhost:3000/api/v1');
+  return ApiClient(baseUrl: AppConfig.apiUrl);
 });
 
 class SocketService {
@@ -389,5 +415,5 @@ class SocketService {
 }
 
 final socketServiceProvider = Provider<SocketService>((ref) {
-  return SocketService(url: 'http://localhost:3000');
+  return SocketService(url: AppConfig.socketUrl);
 });

@@ -11,6 +11,8 @@ import 'package:project_phoenix_customer/features/auth/presentation/auth_notifie
 import 'package:project_phoenix_customer/features/profile/presentation/image_crop_dialog.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_theme/shared_theme.dart';
+import 'package:project_phoenix_customer/features/profile/presentation/widgets/address_selection_sheet.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -460,6 +462,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ),
             const SizedBox(height: 8),
 
+            // Saved Address Section
+            if (authState.isAuthenticated) ...[
+              _buildAddressSection(context, authState, isSeniorMode, theme),
+              const SizedBox(height: 12),
+            ],
+
             // Quick Stats Row
             if (authState.isAuthenticated) ...[
               Row(
@@ -686,6 +694,251 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           vertical: isSeniorMode ? 8.0 : 4.0,
         ),
         onTap: onTap,
+      ),
+    );
+  }
+
+  Future<void> _confirmDeleteAddress(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Saved Address?'),
+        content: const Text(
+          'Are you sure you want to remove your saved address? This will delete it from your account and database.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade700,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      final success = await ref.read(authNotifierProvider.notifier).deleteAddress();
+      if (mounted) {
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Address removed successfully.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          final err = ref.read(authNotifierProvider).error ?? 'Failed to delete address';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(err),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  Widget _buildAddressSection(
+    BuildContext context,
+    AuthState authState,
+    bool isSeniorMode,
+    ThemeData theme,
+  ) {
+    final bool hasAddress = authState.address != null && authState.address!.trim().isNotEmpty;
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: hasAddress ? AppTheme.primaryTeal.withValues(alpha: 0.12) : Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    hasAddress ? Icons.location_on_rounded : Icons.location_off_rounded,
+                    color: hasAddress ? AppTheme.primaryTeal : Colors.grey.shade600,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Saved Address',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: isSeniorMode ? 18 : 16,
+                        ),
+                      ),
+                      Text(
+                        hasAddress ? 'Primary Service Location' : 'No default address set',
+                        style: TextStyle(
+                          fontSize: isSeniorMode ? 13 : 11,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (hasAddress)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.green.shade200),
+                    ),
+                    child: Text(
+                      'ACTIVE',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green.shade700,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            if (hasAddress) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      authState.address!,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: isSeniorMode ? 16 : 14,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    if ((authState.city != null && authState.city!.isNotEmpty) ||
+                        (authState.state != null && authState.state!.isNotEmpty) ||
+                        (authState.pincode != null && authState.pincode!.isNotEmpty)) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        [
+                          if (authState.city != null && authState.city!.isNotEmpty) authState.city!,
+                          if (authState.state != null && authState.state!.isNotEmpty) authState.state!,
+                          if (authState.pincode != null && authState.pincode!.isNotEmpty) 'PIN: ${authState.pincode!}',
+                        ].join(', '),
+                        style: TextStyle(
+                          fontSize: isSeniorMode ? 14 : 12,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => AddressSelectionSheet.show(context),
+                      icon: const Icon(Icons.edit_location_alt_outlined, size: 16),
+                      label: Text(
+                        'Change Address',
+                        style: TextStyle(fontSize: isSeniorMode ? 14 : 13),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppTheme.primaryTeal,
+                        side: BorderSide(color: AppTheme.primaryTeal),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  OutlinedButton.icon(
+                    onPressed: () => _confirmDeleteAddress(context),
+                    icon: const Icon(Icons.delete_outline_rounded, size: 16, color: Colors.red),
+                    label: Text(
+                      'Delete',
+                      style: TextStyle(
+                        fontSize: isSeniorMode ? 14 : 13,
+                        color: Colors.red,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red,
+                      side: BorderSide(color: Colors.red.shade300),
+                      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                ],
+              ),
+            ] else ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      'No saved address on file. Add your address or use GPS detection so technicians can reach you quickly.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: isSeniorMode ? 14 : 12,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    ElevatedButton.icon(
+                      onPressed: () => AddressSelectionSheet.show(context),
+                      icon: const Icon(Icons.add_location_alt_rounded, size: 18),
+                      label: Text(
+                        'Add Address via GPS',
+                        style: TextStyle(
+                          fontSize: isSeniorMode ? 15 : 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryTeal,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

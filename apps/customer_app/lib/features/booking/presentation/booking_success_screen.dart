@@ -33,10 +33,15 @@ class _BookingSuccessScreenState extends ConsumerState<BookingSuccessScreen>
 
   StreamSubscription? _statusSubscription;
   late AnimationController _pulseController;
+  SocketService? _socketService;
+  BookingRepository? _bookingRepository;
 
   Future<void> _fetchInitialTracking() async {
+    if (!mounted) return;
     try {
-      final data = await ref.read(bookingRepositoryProvider).getBookingTracking(widget.bookingId);
+      final repo = _bookingRepository;
+      if (repo == null) return;
+      final data = await repo.getBookingTracking(widget.bookingId);
       if (mounted) {
         setState(() {
           if (data['currentStatus'] != null) {
@@ -61,6 +66,9 @@ class _BookingSuccessScreenState extends ConsumerState<BookingSuccessScreen>
       duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
 
+    _socketService = ref.read(socketServiceProvider);
+    _bookingRepository = ref.read(bookingRepositoryProvider);
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _fetchInitialTracking();
       _connectSocket();
@@ -68,7 +76,9 @@ class _BookingSuccessScreenState extends ConsumerState<BookingSuccessScreen>
   }
 
   void _connectSocket() {
-    final socket = ref.read(socketServiceProvider);
+    if (!mounted) return;
+    final socket = _socketService;
+    if (socket == null) return;
     socket.connect();
     socket.joinRoom('booking_${widget.bookingId}');
 
@@ -106,7 +116,7 @@ class _BookingSuccessScreenState extends ConsumerState<BookingSuccessScreen>
   void dispose() {
     _statusSubscription?.cancel();
     _pulseController.dispose();
-    ref.read(socketServiceProvider).leaveRoom('booking_${widget.bookingId}');
+    _socketService?.leaveRoom('booking_${widget.bookingId}');
     super.dispose();
   }
 

@@ -287,6 +287,35 @@ export class AuthService implements OnModuleInit {
     return updatedUser;
   }
 
+  async deleteAddress(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+    if (!user) {
+      throw new BadRequestException('User not found.');
+    }
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        address: null,
+        city: null,
+        state: null,
+        pincode: null,
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId,
+        action: 'DELETE_ADDRESS',
+        details: 'User address deleted from database',
+      },
+    });
+
+    return updatedUser;
+  }
+
   async technicianLogin(dto: TechnicianLoginDto) {
     const user = await this.prisma.user.findFirst({
       where: {

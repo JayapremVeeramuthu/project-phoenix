@@ -120,14 +120,16 @@ class _BookingFlowScreenState extends ConsumerState<BookingFlowScreen> {
   @override
   void initState() {
     super.initState();
-    _nameController.text = ref.read(authNotifierProvider).userName ?? '';
-    final String currentPhone = ref.read(authNotifierProvider).userPhone ?? '';
+    final authState = ref.read(authNotifierProvider);
+    _nameController.text = authState.userName ?? '';
+    final String currentPhone = authState.userPhone ?? '';
     _phoneController.text = currentPhone.startsWith('fb_') ? '' : currentPhone;
-    _emailController.text = ref.read(authNotifierProvider).userEmail ?? '';
-    _buildingController.text = 'Phoenix Tower B, Flat 405';
-    _streetController.text = 'OMR Road';
-    _areaController.text = 'Thoraipakkam';
-    _pincodeController.text = '600096';
+    _emailController.text = authState.userEmail ?? '';
+    _buildingController.text = '';
+    _streetController.text = authState.address ?? '';
+    _areaController.text = '';
+    _cityController.text = authState.city ?? '';
+    _pincodeController.text = authState.pincode ?? '';
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _fetchPastBookings();
@@ -244,7 +246,7 @@ class _BookingFlowScreenState extends ConsumerState<BookingFlowScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Requesting GPS permission and fetching high-accuracy coordinates...')),
     );
-    final locationService = LocationService();
+    final locationService = ref.read(locationServiceProvider);
     
     // Request permission correctly
     final permission = await locationService.requestPermission();
@@ -260,9 +262,9 @@ class _BookingFlowScreenState extends ConsumerState<BookingFlowScreen> {
 
     try {
       final loc = await locationService.getCurrentLocation();
-      final lat = loc['latitude'] as double;
-      final lng = loc['longitude'] as double;
-      final accuracy = loc['accuracy'] as double;
+      final lat = (loc['latitude'] as num).toDouble();
+      final lng = (loc['longitude'] as num).toDouble();
+      final accuracy = (loc['accuracy'] as num).toDouble();
 
       setState(() {
         _gpsLatitude = lat;
@@ -910,14 +912,17 @@ class _BookingFlowScreenState extends ConsumerState<BookingFlowScreen> {
                     setState(() {
                       _selectedPropertyType = type;
                       if (type == 'Home') {
-                        _buildingController.text = 'Phoenix Tower B, Flat 405';
-                        _streetController.text = 'OMR Road';
-                        _areaController.text = 'Thoraipakkam';
-                        _pincodeController.text = '600096';
+                        final auth = ref.read(authNotifierProvider);
+                        _buildingController.clear();
+                        _streetController.text = auth.address ?? '';
+                        _areaController.clear();
+                        _cityController.text = auth.city ?? '';
+                        _pincodeController.text = auth.pincode ?? '';
                       } else {
                         _buildingController.clear();
                         _streetController.clear();
                         _areaController.clear();
+                        _cityController.clear();
                         _pincodeController.clear();
                       }
                     });
@@ -992,7 +997,7 @@ class _BookingFlowScreenState extends ConsumerState<BookingFlowScreen> {
 
                       ref.read(bookingNotifierProvider.notifier).updateCoordinates(newLat, newLng);
                       
-                      final locationService = LocationService();
+                      final locationService = ref.read(locationServiceProvider);
                       final addressData = await locationService.reverseGeocode(newLat, newLng);
                       setState(() {
                         _buildingController.text = addressData['houseNumber'] ?? '';

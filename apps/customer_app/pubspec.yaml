@@ -28,6 +28,7 @@ dependencies:
   # Network & Cache
   dio: ^5.4.0
   connectivity_plus: ^5.0.2
+  geolocator: ^12.0.0
 
   # Security & Storage
   flutter_secure_storage: ^9.0.0

@@ -18,7 +18,7 @@ void main() {
     late ServiceItem mockService;
 
     setUp(() {
-      apiClient = ApiClient(baseUrl: 'http://localhost:3000/api/v1');
+      apiClient = ApiClient(baseUrl: AppConfig.apiUrl);
       bookingRepository = BookingRepository(apiClient);
       minioUploadService = MinioUploadService(apiClient);
       bookingNotifier = BookingNotifier(bookingRepository, minioUploadService);

@@ -10,6 +10,7 @@ import { WarrantyModule } from './warranty/warranty.module';
 import { MediaModule } from './media/media.module';
 import { ProductsModule } from './products/products.module';
 import { AdminModule } from './admin/admin.module';
+import { GeoModule } from './geo/geo.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -25,6 +26,7 @@ import { HealthController } from './health.controller';
     MediaModule,
     ProductsModule,
     AdminModule,
+    GeoModule,
   ],
   controllers: [HealthController],
 })
