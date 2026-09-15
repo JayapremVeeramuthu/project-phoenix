@@ -7,10 +7,10 @@ export class CreateBookingDto {
   @IsOptional()
   localId?: string;
 
-  @ApiProperty({ example: 'customer-uuid-here' })
+  @ApiProperty({ example: 'customer-uuid-here', required: false })
   @IsString()
-  @IsNotEmpty()
-  customerId: string;
+  @IsOptional()
+  customerId?: string;
 
   @ApiProperty({ example: 'property-uuid-here' })
   @IsString()

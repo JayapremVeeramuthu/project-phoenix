@@ -1,7 +1,8 @@
-import { Controller, Post, Get, Patch, Body, Query, ParseIntPipe, Param, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Body, Query, ParseIntPipe, Param, HttpCode, HttpStatus, UseGuards, Req } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiQuery, ApiResponse } from '@nestjs/swagger';
 import { BookingService } from './booking.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
+import { OptionalJwtAuthGuard } from '../common/guards/jwt-auth.guard';
 
 @ApiTags('Bookings')
 @Controller('bookings')
@@ -9,23 +10,28 @@ export class BookingController {
   constructor(private bookingService: BookingService) {}
 
   @Post()
+  @UseGuards(OptionalJwtAuthGuard)
   @ApiOperation({ summary: 'Create a new service booking' })
   @ApiResponse({ status: 201, description: 'Booking successfully created' })
-  async createBooking(@Body() dto: CreateBookingDto) {
-    return this.bookingService.createBooking(dto);
+  async createBooking(@Body() dto: CreateBookingDto, @Req() req: any) {
+    const authenticatedUserId = req.user?.sub || req.user?.id;
+    return this.bookingService.createBooking(dto, authenticatedUserId);
   }
 
   @Get()
+  @UseGuards(OptionalJwtAuthGuard)
   @ApiOperation({ summary: 'List all bookings with pagination' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'customerId', required: false, type: String })
   async getBookings(
+    @Req() req: any,
     @Query('page', new ParseIntPipe({ optional: true })) page = 1,
     @Query('limit', new ParseIntPipe({ optional: true })) limit = 10,
     @Query('customerId') customerId?: string,
   ) {
-    return this.bookingService.getBookings(page, limit, customerId);
+    const effectiveCustomerId = customerId || (req.user?.role === 'CUSTOMER' ? (req.user.sub || req.user.id) : undefined);
+    return this.bookingService.getBookings(page, limit, effectiveCustomerId);
   }
 
   @Get(':id/tracking')

@@ -1,13 +1,28 @@
-import { Controller, Post, Get, Put, Delete, Body, HttpCode, HttpStatus, UseGuards, Query } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import {
+  Controller,
+  Post,
+  Get,
+  Put,
+  Delete,
+  Body,
+  HttpCode,
+  HttpStatus,
+  UseGuards,
+  Query,
+  Req,
+  BadRequestException,
+} from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
-import { FirebaseTokenDto } from './dto/firebase-token.dto';
+import { CustomerRegisterDto } from './dto/customer-register.dto';
+import { CustomerLoginDto } from './dto/customer-login.dto';
 import { RefreshDto } from './dto/refresh.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { TechnicianLoginDto } from './dto/technician-login.dto';
 import { TechnicianAvailabilityDto } from './dto/technician-availability.dto';
 import { AdminLoginDto } from './dto/admin-login.dto';
 import { RateLimiterGuard } from '../common/guards/rate-limiter.guard';
+import { OptionalJwtAuthGuard } from '../common/guards/jwt-auth.guard';
 
 @ApiTags('Authentication')
 @Controller('auth')
@@ -16,18 +31,18 @@ export class AuthController {
   constructor(private authService: AuthService) {}
 
   @Post('register')
-  @ApiOperation({ summary: 'Sync Firebase register account with PostgreSQL User profile' })
+  @ApiOperation({ summary: 'Register customer account with email, phone, name and password' })
   @ApiResponse({ status: 201, description: 'User successfully created in database' })
-  async register(@Body() dto: FirebaseTokenDto) {
-    return this.authService.register(dto.idToken);
+  async register(@Body() dto: CustomerRegisterDto) {
+    return this.authService.register(dto);
   }
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Sync Firebase login with PostgreSQL user details' })
+  @ApiOperation({ summary: 'Authenticate customer with email and password' })
   @ApiResponse({ status: 200, description: 'Tokens issued successfully' })
-  async login(@Body() dto: FirebaseTokenDto) {
-    return this.authService.login(dto.idToken);
+  async login(@Body() dto: CustomerLoginDto) {
+    return this.authService.login(dto);
   }
 
   @Post('technician/login')
@@ -64,72 +79,92 @@ export class AuthController {
 
   @Post('google')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Authenticate user Google Sign-In profile verified by Firebase ID token' })
-  async googleLogin(@Body() dto: FirebaseTokenDto) {
+  @ApiOperation({ summary: 'Authenticate user Google Sign-In' })
+  async googleLogin(@Body() dto: any) {
     return this.authService.googleLogin(dto.idToken);
   }
 
   @Post('otp-send')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Request OTP verification code (handled on client SDK)' })
+  @ApiOperation({ summary: 'Request OTP verification code' })
   async otpSend() {
-    return { message: 'OTP dispatch is initialized directly on the client application.' };
+    return { message: 'Phone OTP verification requires an active SMS gateway or client provider.' };
   }
 
   @Post('otp-verify')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Verify OTP code and authenticate session via Firebase ID token' })
-  async otpVerify(@Body() dto: FirebaseTokenDto) {
+  @ApiOperation({ summary: 'Verify OTP code' })
+  async otpVerify(@Body() dto: any) {
     return this.authService.otpVerify(dto.idToken);
   }
 
   @Post('otp-resend')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Resend OTP verification code (handled on client SDK)' })
+  @ApiOperation({ summary: 'Resend OTP verification code' })
   async otpResend() {
-    return { message: 'OTP resend sequence is processed on the client application.' };
+    return { message: 'Phone OTP resend requires an active SMS gateway or client provider.' };
   }
 
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Forgot password reset trigger (redirects to Firebase recovery console)' })
+  @ApiOperation({ summary: 'Password recovery trigger' })
   async forgotPassword() {
-    return { message: 'Password recovery dispatches are managed via the Firebase Authentication console.' };
+    return { message: 'Password recovery dispatches are managed via email or SMS gateway.' };
   }
 
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Reset password credentials verification' })
   async resetPassword() {
-    return { message: 'Password updates are directly committed on the Firebase Auth console.' };
+    return { message: 'Password updates are managed via backend authentication credentials.' };
   }
 
   @Post('logout')
+  @UseGuards(OptionalJwtAuthGuard)
+  @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Invalidate user sessions and delete refresh tokens' })
-  async logout(@Query('userId') userId: string) {
-    return this.authService.logout(userId);
+  async logout(@Req() req: any, @Query('userId') userId?: string) {
+    const effectiveUserId = req.user?.sub || req.user?.id || userId;
+    if (!effectiveUserId) {
+      return { message: 'Logout completed.' };
+    }
+    return this.authService.logout(effectiveUserId);
   }
 
   @Get('profile')
+  @UseGuards(OptionalJwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Retrieve user profile statistics and properties' })
-  async getProfile(@Query('userId') userId: string) {
-    return this.authService.getProfile(userId);
+  async getProfile(@Req() req: any, @Query('userId') userId?: string) {
+    const effectiveUserId = req.user?.sub || req.user?.id || userId;
+    if (!effectiveUserId) {
+      throw new BadRequestException('User ID or Bearer token is required.');
+    }
+    return this.authService.getProfile(effectiveUserId);
   }
 
   @Put('profile')
+  @UseGuards(OptionalJwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Update user profile details' })
-  async updateProfile(@Body() dto: UpdateProfileDto) {
-    console.log(`[AUTH] PUT /api/v1/auth/profile received: userId=${dto.userId}, address=${dto.address}, city=${dto.city}, state=${dto.state}, pincode=${dto.pincode}`);
-    const result = await this.authService.updateProfile(dto);
-    console.log(`[AUTH] PUT /api/v1/auth/profile success: updated user id=${result.id}`);
-    return result;
+  async updateProfile(@Req() req: any, @Body() dto: UpdateProfileDto) {
+    if (!dto.userId && (req.user?.sub || req.user?.id)) {
+      dto.userId = req.user?.sub || req.user?.id;
+    }
+    return this.authService.updateProfile(dto);
   }
 
   @Delete('address')
+  @UseGuards(OptionalJwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Delete user address' })
-  async deleteAddress(@Query('userId') userId: string) {
-    return this.authService.deleteAddress(userId);
+  async deleteAddress(@Req() req: any, @Query('userId') userId?: string) {
+    const effectiveUserId = req.user?.sub || req.user?.id || userId;
+    if (!effectiveUserId) {
+      throw new BadRequestException('User ID or Bearer token is required.');
+    }
+    return this.authService.deleteAddress(effectiveUserId);
   }
 
   @Post('technician/change-password')

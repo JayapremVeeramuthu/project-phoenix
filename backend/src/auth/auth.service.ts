@@ -1,14 +1,17 @@
-import { Injectable, UnauthorizedException, BadRequestException, OnModuleInit, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, OnModuleInit, ForbiddenException, NotFoundException, ConflictException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import * as fs from 'fs';
+import * as crypto from 'crypto';
+import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { TechnicianLoginDto } from './dto/technician-login.dto';
 import { TechnicianAvailabilityDto } from './dto/technician-availability.dto';
 import { AdminLoginDto } from './dto/admin-login.dto';
-import * as bcrypt from 'bcryptjs';
+import { CustomerRegisterDto } from './dto/customer-register.dto';
+import { CustomerLoginDto } from './dto/customer-login.dto';
 
 @Injectable()
 export class AuthService implements OnModuleInit {
@@ -21,10 +24,8 @@ export class AuthService implements OnModuleInit {
     try {
       if (!getApps().length) {
         const credentialsPath = process.env.FIREBASE_CREDENTIALS_PATH;
-        console.log(`Credentials path: ${credentialsPath}`);
         if (credentialsPath) {
           const fileExists = fs.existsSync(credentialsPath);
-          console.log(`Credentials file exists: ${fileExists}`);
           if (fileExists) {
             const serviceAccount = JSON.parse(
               fs.readFileSync(credentialsPath, 'utf8'),
@@ -45,7 +46,112 @@ export class AuthService implements OnModuleInit {
     }
   }
 
-  // --- Real Firebase ID Token Verification Strategy ---
+  // --- Native Customer Registration (NestJS + PostgreSQL + JWT) ---
+  async registerCustomer(dto: CustomerRegisterDto) {
+    if (dto.idToken && !dto.password) {
+      return this.syncFirebaseUser(dto.idToken);
+    }
+
+    if (!dto.name || !dto.email || !dto.phoneNumber || !dto.password) {
+      throw new BadRequestException('Name, email, phone number, and password are required for registration.');
+    }
+
+    const email = dto.email.trim().toLowerCase();
+    const phoneNumber = dto.phoneNumber.trim();
+
+    const existingEmail = await this.prisma.user.findUnique({
+      where: { email },
+    });
+    if (existingEmail) {
+      throw new ConflictException('A user with this email address already exists.');
+    }
+
+    const existingPhone = await this.prisma.user.findUnique({
+      where: { phoneNumber },
+    });
+    if (existingPhone) {
+      throw new ConflictException('A user with this phone number already exists.');
+    }
+
+    const hashedPassword = await bcrypt.hash(dto.password, 10);
+
+    const user = await this.prisma.user.create({
+      data: {
+        name: dto.name.trim(),
+        email,
+        phoneNumber,
+        password: hashedPassword,
+        role: 'CUSTOMER',
+        provider: 'email',
+        isActive: true,
+        lastLoginAt: new Date(),
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: user.id,
+        action: 'CUSTOMER_REGISTER',
+        details: `Registered new customer account: ${user.email}`,
+      },
+    });
+
+    const tokens = await this.generateTokens(user.id, user.role);
+    return {
+      ...tokens,
+      user: this.sanitizeUser(user),
+    };
+  }
+
+  // --- Native Customer Email/Password Login (NestJS + PostgreSQL + JWT) ---
+  async loginCustomer(dto: CustomerLoginDto) {
+    if (dto.idToken && !dto.password) {
+      return this.syncFirebaseUser(dto.idToken);
+    }
+
+    if (!dto.email || !dto.password) {
+      throw new BadRequestException('Email and password are required.');
+    }
+
+    const email = dto.email.trim().toLowerCase();
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (!user || !user.password) {
+      throw new UnauthorizedException('Invalid email or password.');
+    }
+
+    if (!user.isActive) {
+      throw new UnauthorizedException('Your account has been deactivated. Please contact support.');
+    }
+
+    const isMatch = await bcrypt.compare(dto.password, user.password);
+    if (!isMatch) {
+      throw new UnauthorizedException('Invalid email or password.');
+    }
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: user.id,
+        action: 'CUSTOMER_LOGIN',
+        details: `Customer logged in with email: ${user.email}`,
+      },
+    });
+
+    const tokens = await this.generateTokens(user.id, user.role);
+    return {
+      ...tokens,
+      user: this.sanitizeUser(user),
+    };
+  }
+
+  // --- Real Firebase ID Token Verification Strategy (Legacy/Optional) ---
   async verifyFirebaseToken(idToken: string) {
     if (!getApps().length) {
       throw new BadRequestException(
@@ -89,7 +195,7 @@ export class AuthService implements OnModuleInit {
 
     const email = firebaseEmail || decodedToken.email || null;
     const phone = firebasePhone || decodedToken.phone_number || null;
-    const name = firebaseName || decodedToken.name || email?.split('@')[0] || phone || 'Firebase User';
+    const name = firebaseName || decodedToken.name || email?.split('@')[0] || phone || 'User';
     const avatarUrl = firebaseAvatar || decodedToken.picture || null;
     const provider = firebaseProvider || decodedToken.firebase?.sign_in_provider || 'unknown';
 
@@ -98,7 +204,6 @@ export class AuthService implements OnModuleInit {
     });
 
     if (!user) {
-      // Check if user already exists with this email or phone to link accounts
       if (email) {
         user = await this.prisma.user.findUnique({ where: { email } });
       }
@@ -107,7 +212,6 @@ export class AuthService implements OnModuleInit {
       }
 
       if (user) {
-        // Link existing account to this Firebase UID
         user = await this.prisma.user.update({
           where: { id: user.id },
           data: {
@@ -119,7 +223,6 @@ export class AuthService implements OnModuleInit {
           },
         });
       } else {
-        // Create a new user profile record in PostgreSQL
         const formattedPhone = phone || `fb_${uid}`;
         user = await this.prisma.user.create({
           data: {
@@ -143,7 +246,6 @@ export class AuthService implements OnModuleInit {
         });
       }
     } else {
-      // Update existing record profiles
       user = await this.prisma.user.update({
         where: { id: user.id },
         data: {
@@ -166,24 +268,36 @@ export class AuthService implements OnModuleInit {
     const tokens = await this.generateTokens(user.id, user.role);
     return {
       ...tokens,
-      user,
+      user: this.sanitizeUser(user),
     };
   }
 
-  // --- REST Routes Handlers mapped to Firebase Verification ---
-  async register(idToken: string) {
+  // --- REST Routes Handlers mapped to Customer Registration / Login ---
+  async register(dto: CustomerRegisterDto) {
+    return this.registerCustomer(dto);
+  }
+
+  async login(dto: CustomerLoginDto) {
+    return this.loginCustomer(dto);
+  }
+
+  async googleLogin(idToken?: string) {
+    if (!idToken) {
+      throw new BadRequestException('Google Sign-In token is required.');
+    }
+    if (!getApps().length) {
+      throw new BadRequestException('Google Sign-In requires Firebase or direct OAuth configuration.');
+    }
     return this.syncFirebaseUser(idToken);
   }
 
-  async login(idToken: string) {
-    return this.syncFirebaseUser(idToken);
-  }
-
-  async googleLogin(idToken: string) {
-    return this.syncFirebaseUser(idToken);
-  }
-
-  async otpVerify(idToken: string) {
+  async otpVerify(idToken?: string) {
+    if (!idToken) {
+      throw new BadRequestException('OTP verification token is required.');
+    }
+    if (!getApps().length) {
+      throw new BadRequestException('Phone OTP verification requires Firebase or an active SMS gateway provider.');
+    }
     return this.syncFirebaseUser(idToken);
   }
 
@@ -196,7 +310,13 @@ export class AuthService implements OnModuleInit {
       const user = await this.prisma.user.findUnique({
         where: { id: payload.sub },
       });
-      if (!user || user.refreshToken !== refreshToken) {
+      if (!user || !user.refreshToken) {
+        throw new UnauthorizedException('Invalid or expired refresh token');
+      }
+
+      const hashedIncoming = crypto.createHash('sha256').update(refreshToken).digest('hex');
+      const isMatch = user.refreshToken === refreshToken || user.refreshToken === hashedIncoming;
+      if (!isMatch) {
         throw new UnauthorizedException('Invalid or expired refresh token');
       }
 
@@ -245,9 +365,11 @@ export class AuthService implements OnModuleInit {
       expiresIn: process.env.JWT_REFRESH_EXPIRY || '7d',
     });
 
+    const hashedRefreshToken = crypto.createHash('sha256').update(refreshToken).digest('hex');
+
     await this.prisma.user.update({
       where: { id: userId },
-      data: { refreshToken },
+      data: { refreshToken: hashedRefreshToken },
     });
 
     return {
@@ -256,12 +378,18 @@ export class AuthService implements OnModuleInit {
     };
   }
 
+  sanitizeUser(user: any) {
+    if (!user) return user;
+    const { password, refreshToken, ...sanitized } = user;
+    return sanitized;
+  }
+
   async getProfile(userId: string) {
     const user = await this.findUserByIdOrFirebaseUid(userId);
     if (!user) {
       throw new BadRequestException('User not found.');
     }
-    return user;
+    return this.sanitizeUser(user);
   }
 
   async updateProfile(dto: UpdateProfileDto) {
@@ -290,7 +418,7 @@ export class AuthService implements OnModuleInit {
       },
     });
 
-    return updatedUser;
+    return this.sanitizeUser(updatedUser);
   }
 
   async deleteAddress(userId: string) {
@@ -317,7 +445,7 @@ export class AuthService implements OnModuleInit {
       },
     });
 
-    return updatedUser;
+    return this.sanitizeUser(updatedUser);
   }
 
   async technicianLogin(dto: TechnicianLoginDto) {

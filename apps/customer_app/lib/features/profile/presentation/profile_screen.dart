@@ -9,7 +9,6 @@ import 'package:project_phoenix_customer/core/theme/settings_provider.dart';
 import 'package:shared_api/shared_api.dart';
 import 'package:project_phoenix_customer/features/auth/presentation/auth_notifier.dart';
 import 'package:project_phoenix_customer/features/profile/presentation/image_crop_dialog.dart';
-import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_theme/shared_theme.dart';
 import 'package:project_phoenix_customer/features/profile/presentation/widgets/address_selection_sheet.dart';
@@ -29,14 +28,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   Future<void> _initProfileScreen() async {
-    // Print verification logs requested by the user
-    final fbUser = fb.FirebaseAuth.instance.currentUser;
     debugPrint("=== PROFILE OPENED VERIFICATION LOGS ===");
-    debugPrint("FirebaseAuth.instance.currentUser: $fbUser");
-    if (fbUser != null) {
-      debugPrint("  uid: ${fbUser.uid}");
-      debugPrint("  email: ${fbUser.email}");
-    }
     
     const storage = FlutterSecureStorage();
     final accessToken = await storage.read(key: 'access_token');

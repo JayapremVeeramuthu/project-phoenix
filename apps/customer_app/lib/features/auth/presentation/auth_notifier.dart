@@ -1,9 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:shared_api/shared_api.dart';
-import 'package:project_phoenix_customer/features/auth/data/firebase_service.dart';
 
 class AuthState {
   final bool isAuthenticated;
@@ -89,16 +87,11 @@ class AuthState {
 class AuthNotifier extends StateNotifier<AuthState> {
   final ApiClient _apiClient;
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
-  final FirebaseService _firebaseService;
-
-  String? _verificationId;
-  int? _resendToken;
 
   AuthNotifier(
     this._apiClient, {
-    FirebaseService? firebaseService,
-  })  : _firebaseService = firebaseService ?? FirebaseService(),
-        super(AuthState()) {
+    Object? firebaseService,
+  }) : super(AuthState()) {
     _checkAutoLogin();
   }
 
@@ -138,7 +131,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         provider: provider,
       );
 
-      _logPostLogin(accessToken, (await _storage.read(key: 'firebase_uid')) ?? '', {
+      _logPostLogin(accessToken, {
         'id': userId,
         'name': userName,
         'email': userEmail,
@@ -155,63 +148,16 @@ class AuthNotifier extends StateNotifier<AuthState> {
       });
 
       _fetchLatestProfile();
-    } else {
-      final currentUser = _firebaseService.currentUser;
-      if (currentUser != null) {
-        try {
-          final idToken = await currentUser.getIdToken();
-          if (idToken != null) {
-            final response = await _apiClient.post('/auth/login', data: {
-              'idToken': idToken,
-            });
-
-            final userMap = response.data['user'];
-            final aToken = response.data['access_token'] as String;
-            final rToken = response.data['refresh_token'] as String;
-
-            await _saveSession(
-              accessToken: aToken,
-              refreshToken: rToken,
-              firebaseUid: currentUser.uid,
-              userMap: userMap,
-            );
-
-            state = AuthState(
-              isAuthenticated: true,
-              isGuest: false,
-              userId: userMap['id'] as String,
-              userName: userMap['name'] as String?,
-              userEmail: userMap['email'] as String?,
-              userPhone: userMap['phoneNumber'] as String?,
-              userRole: userMap['role'] as String?,
-              userAvatar: userMap['avatarUrl'] as String?,
-              gender: userMap['gender'] as String?,
-              dateOfBirth: userMap['dateOfBirth'] as String?,
-              address: userMap['address'] as String?,
-              city: userMap['city'] as String?,
-              state: userMap['state'] as String?,
-              pincode: userMap['pincode'] as String?,
-              provider: userMap['provider'] as String?,
-            );
-            _logPostLogin(aToken, currentUser.uid, userMap);
-            _fetchLatestProfile();
-          }
-        } catch (_) {
-          await logout();
-        }
-      }
     }
   }
 
   Future<void> _saveSession({
     required String accessToken,
     required String refreshToken,
-    required String firebaseUid,
     required Map<String, dynamic> userMap,
   }) async {
     await _storage.write(key: 'access_token', value: accessToken);
     await _storage.write(key: 'refresh_token', value: refreshToken);
-    await _storage.write(key: 'firebase_uid', value: firebaseUid);
     await _storage.write(key: 'user_id', value: userMap['id'] as String);
     await _storage.write(key: 'user_name', value: userMap['name'] as String? ?? '');
     await _storage.write(key: 'user_email', value: userMap['email'] as String? ?? '');
@@ -224,13 +170,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
     await _storage.write(key: 'user_city', value: userMap['city'] as String? ?? '');
     await _storage.write(key: 'user_state', value: userMap['state'] as String? ?? '');
     await _storage.write(key: 'user_pincode', value: userMap['pincode'] as String? ?? '');
-    await _storage.write(key: 'user_provider', value: userMap['provider'] as String? ?? '');
+    await _storage.write(key: 'user_provider', value: userMap['provider'] as String? ?? 'email');
   }
 
   Future<void> _clearSession() async {
     await _storage.delete(key: 'access_token');
     await _storage.delete(key: 'refresh_token');
-    await _storage.delete(key: 'firebase_uid');
     await _storage.delete(key: 'user_id');
     await _storage.delete(key: 'user_name');
     await _storage.delete(key: 'user_email');
@@ -252,7 +197,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     try {
       final response = await _apiClient.get('/auth/profile?userId=$userId');
       final userMap = response.data;
-      
+
       await _storage.write(key: 'user_name', value: userMap['name'] as String? ?? '');
       await _storage.write(key: 'user_email', value: userMap['email'] as String? ?? '');
       await _storage.write(key: 'user_phone', value: userMap['phoneNumber'] as String? ?? '');
@@ -264,7 +209,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       await _storage.write(key: 'user_city', value: userMap['city'] as String? ?? '');
       await _storage.write(key: 'user_state', value: userMap['state'] as String? ?? '');
       await _storage.write(key: 'user_pincode', value: userMap['pincode'] as String? ?? '');
-      await _storage.write(key: 'user_provider', value: userMap['provider'] as String? ?? '');
+      await _storage.write(key: 'user_provider', value: userMap['provider'] as String? ?? 'email');
 
       state = state.copyWith(
         userName: userMap['name'] as String?,
@@ -282,7 +227,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       );
     } catch (e) {
       debugPrint('Failed to refresh profile cache: ${e.toString()}');
-      if (e is ApiException && e.statusCode == 400) {
+      if (e is ApiException && e.statusCode == 401) {
         await logout();
       }
     }
@@ -290,12 +235,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   Future<void> fetchLatestProfile() => _fetchLatestProfile();
 
-  void _logPostLogin(String accessToken, String firebaseUid, Map<String, dynamic> userMap) {
+  void _logPostLogin(String accessToken, Map<String, dynamic> userMap) {
     debugPrint("=== SUCCESSFUL AUTHENTICATION LOGS ===");
     debugPrint("isAuthenticated: ${state.isAuthenticated}");
     debugPrint("accessToken: $accessToken");
-    debugPrint("firebaseUid: $firebaseUid");
     debugPrint("user object: $userMap");
+    debugPrint("userId: ${userMap['id']}");
     debugPrint("name: ${userMap['name']}");
     debugPrint("email: ${userMap['email']}");
     debugPrint("phone: ${userMap['phoneNumber']}");
@@ -304,7 +249,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> logProfileScreenOpening() async {
-    final currentUser = _firebaseService.currentUser;
     debugPrint("=== PROFILE SCREEN OPENING LOGS ===");
     debugPrint("Current AuthState:");
     debugPrint("  isAuthenticated: ${state.isAuthenticated}");
@@ -323,20 +267,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
     debugPrint("  pincode: ${state.pincode}");
     debugPrint("  provider: ${state.provider}");
 
-    debugPrint("Current Firebase User:");
-    if (currentUser != null) {
-      debugPrint("  uid: ${currentUser.uid}");
-      debugPrint("  email: ${currentUser.email}");
-      debugPrint("  displayName: ${currentUser.displayName}");
-    } else {
-      debugPrint("  No active Firebase User session.");
-    }
-
     debugPrint("Secure Storage Values:");
     final allKeys = [
       'access_token',
       'refresh_token',
-      'firebase_uid',
       'user_id',
       'user_name',
       'user_email',
@@ -356,6 +290,125 @@ class AuthNotifier extends StateNotifier<AuthState> {
       debugPrint("  $key: $val");
     }
     debugPrint("======================================");
+  }
+
+  Future<bool> loginWithEmail(String email, String password) async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      final response = await _apiClient.post('/auth/login', data: {
+        'email': email.trim(),
+        'password': password,
+      });
+
+      final accessToken = response.data['access_token'] as String;
+      final refreshToken = response.data['refresh_token'] as String;
+      final userMap = response.data['user'] as Map<String, dynamic>;
+
+      await _saveSession(
+        accessToken: accessToken,
+        refreshToken: refreshToken,
+        userMap: userMap,
+      );
+
+      state = AuthState(
+        isAuthenticated: true,
+        isGuest: false,
+        userId: userMap['id'] as String,
+        userName: userMap['name'] as String?,
+        userEmail: userMap['email'] as String?,
+        userPhone: userMap['phoneNumber'] as String?,
+        userRole: userMap['role'] as String?,
+        userAvatar: userMap['avatarUrl'] as String?,
+        gender: userMap['gender'] as String?,
+        dateOfBirth: userMap['dateOfBirth'] as String?,
+        address: userMap['address'] as String?,
+        city: userMap['city'] as String?,
+        state: userMap['state'] as String?,
+        pincode: userMap['pincode'] as String?,
+        provider: userMap['provider'] as String?,
+      );
+
+      _logPostLogin(accessToken, userMap);
+      _fetchLatestProfile();
+      return true;
+    } on ApiException catch (e) {
+      debugPrint("Login ApiException: ${e.statusCode} ${e.message}");
+      state = state.copyWith(
+        isLoading: false,
+        error: e.message.isNotEmpty ? e.message : 'Invalid credentials',
+      );
+      return false;
+    } catch (e) {
+      debugPrint("Login error: $e");
+      state = state.copyWith(
+        isLoading: false,
+        error: 'Login failed: ${e.toString()}',
+      );
+      return false;
+    }
+  }
+
+  Future<bool> registerWithEmail({
+    required String email,
+    required String phoneNumber,
+    required String name,
+    required String password,
+  }) async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      final response = await _apiClient.post('/auth/register', data: {
+        'name': name.trim(),
+        'email': email.trim(),
+        'phoneNumber': phoneNumber.trim(),
+        'password': password,
+      });
+
+      final accessToken = response.data['access_token'] as String;
+      final refreshToken = response.data['refresh_token'] as String;
+      final userMap = response.data['user'] as Map<String, dynamic>;
+
+      await _saveSession(
+        accessToken: accessToken,
+        refreshToken: refreshToken,
+        userMap: userMap,
+      );
+
+      state = AuthState(
+        isAuthenticated: true,
+        isGuest: false,
+        userId: userMap['id'] as String,
+        userName: userMap['name'] as String? ?? name,
+        userEmail: userMap['email'] as String? ?? email,
+        userPhone: userMap['phoneNumber'] as String? ?? phoneNumber,
+        userRole: userMap['role'] as String? ?? 'CUSTOMER',
+        userAvatar: userMap['avatarUrl'] as String?,
+        gender: userMap['gender'] as String?,
+        dateOfBirth: userMap['dateOfBirth'] as String?,
+        address: userMap['address'] as String?,
+        city: userMap['city'] as String?,
+        state: userMap['state'] as String?,
+        pincode: userMap['pincode'] as String?,
+        provider: 'email',
+      );
+
+      _logPostLogin(accessToken, userMap);
+      _fetchLatestProfile();
+      return true;
+    } on ApiException catch (e) {
+      debugPrint("Registration ApiException: ${e.statusCode} ${e.message}");
+      state = state.copyWith(
+        isLoading: false,
+        error: e.message.isNotEmpty ? e.message : 'Registration failed',
+      );
+      return false;
+    } catch (e) {
+      debugPrint("Registration error: $e");
+      state = state.copyWith(
+        isLoading: false,
+        error: 'Registration failed: ${e.toString()}',
+      );
+      return false;
+    }
   }
 
   Future<bool> updateProfile({
@@ -391,7 +444,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
       await _saveSession(
         accessToken: (await _storage.read(key: 'access_token')) ?? '',
         refreshToken: (await _storage.read(key: 'refresh_token')) ?? '',
-        firebaseUid: (await _storage.read(key: 'firebase_uid')) ?? '',
         userMap: userMap,
       );
 
@@ -453,24 +505,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
     String? stateName,
     String? pincode,
   }) async {
-    // 1. Resolve userId: state -> storage (user_id) -> storage (firebase_uid) -> firebaseService
     var userId = state.userId;
     if (userId == null || userId.isEmpty) {
       userId = await _storage.read(key: 'user_id');
-    }
-    if (userId == null || userId.isEmpty) {
-      userId = await _storage.read(key: 'firebase_uid');
-    }
-    if (userId == null || userId.isEmpty) {
-      userId = _firebaseService.currentUser?.uid;
     }
 
     final effectiveCity = city ?? '';
     final effectiveState = stateName ?? '';
     final effectivePincode = pincode ?? '';
 
-    // If still no userId, but user is guest / unauthenticated:
-    // Persist address locally so guest can browse with local address on HomeScreen
     if (userId == null || userId.isEmpty) {
       debugPrint('[AUTH] updateAddress: Guest/Unauthenticated mode. Saving address locally.');
       await _storage.write(key: 'user_address', value: address);
@@ -499,15 +542,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
       'pincode': effectivePincode,
     };
 
-    debugPrint('[AUTH] HTTP Method: PUT');
-    debugPrint('[AUTH] Endpoint: /auth/profile');
-    debugPrint('[AUTH] Payload: $payload');
-
     try {
       final response = await _apiClient.put('/auth/profile', data: payload);
-
-      debugPrint('[AUTH] Status code: ${response.statusCode}');
-      debugPrint('[AUTH] Response: ${response.data}');
 
       final userMap = response.data;
       final savedAddress = userMap['address'] as String? ?? address;
@@ -547,12 +583,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     if (userId == null || userId.isEmpty) {
       userId = await _storage.read(key: 'user_id');
     }
-    if (userId == null || userId.isEmpty) {
-      userId = await _storage.read(key: 'firebase_uid');
-    }
-    if (userId == null || userId.isEmpty) {
-      userId = _firebaseService.currentUser?.uid;
-    }
 
     if (userId == null || userId.isEmpty) {
       await _storage.delete(key: 'user_address');
@@ -591,550 +621,57 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  Future<bool> loginWithEmail(String email, String password) async {
-    state = state.copyWith(isLoading: true, error: null);
-    try {
-      final userCredential = await _firebaseService.signInWithEmailAndPassword(
-        email,
-        password,
-      );
-
-      final idToken = await userCredential.user?.getIdToken();
-      if (idToken == null) throw Exception('Failed to obtain Firebase ID Token.');
-
-      final response = await _apiClient.post('/auth/login', data: {
-        'idToken': idToken,
-      });
-
-      final accessToken = response.data['access_token'] as String;
-      final refreshToken = response.data['refresh_token'] as String;
-
-      final userMap = response.data['user'];
-      await _saveSession(
-        accessToken: accessToken,
-        refreshToken: refreshToken,
-        firebaseUid: userCredential.user?.uid ?? '',
-        userMap: userMap,
-      );
-
-      state = AuthState(
-        isAuthenticated: true,
-        isGuest: false,
-        userId: userMap['id'] as String,
-        userName: userMap['name'] as String?,
-        userEmail: userMap['email'] as String?,
-        userPhone: userMap['phoneNumber'] as String?,
-        userRole: userMap['role'] as String?,
-        userAvatar: userMap['avatarUrl'] as String?,
-      );
-      _logPostLogin(accessToken, userCredential.user?.uid ?? '', userMap);
-      _fetchLatestProfile();
-      return true;
-    } on fb.FirebaseAuthException catch (e) {
-      debugPrint("FirebaseAuthException code: ${e.code}");
-      debugPrint("FirebaseAuthException message: ${e.message}");
-      debugPrint(e.toString());
-      state = state.copyWith(
-        isLoading: false,
-        error: "${e.code}\n${e.message}",
-      );
-      return false;
-    } catch (e) {
-      state = state.copyWith(
-        isLoading: false,
-        error: 'Login failed: ${e.toString()}',
-      );
-      return false;
-    }
-  }
-
-  Future<bool> registerWithEmail({
-    required String email,
-    required String phoneNumber,
-    required String name,
-    required String password,
-  }) async {
-    state = state.copyWith(isLoading: true, error: null);
-    try {
-      final userCredential = await _firebaseService.createUserWithEmailAndPassword(
-        email,
-        password,
-      );
-
-      await userCredential.user?.sendEmailVerification();
-      final idToken = await userCredential.user?.getIdToken();
-      if (idToken == null) throw Exception('Failed to obtain Firebase ID Token.');
-
-      final response = await _apiClient.post('/auth/register', data: {
-        'idToken': idToken,
-      });
-
-      final accessToken = response.data['access_token'] as String;
-      final refreshToken = response.data['refresh_token'] as String;
-
-      final userMap = response.data['user'];
-      await _saveSession(
-        accessToken: accessToken,
-        refreshToken: refreshToken,
-        firebaseUid: userCredential.user?.uid ?? '',
-        userMap: userMap,
-      );
-
-      state = AuthState(
-        isAuthenticated: true,
-        isGuest: false,
-        userId: userMap['id'] as String,
-        userName: name,
-        userEmail: email,
-        userPhone: phoneNumber,
-        userRole: userMap['role'] as String?,
-        userAvatar: userMap['avatarUrl'] as String?,
-      );
-      _logPostLogin(accessToken, userCredential.user?.uid ?? '', userMap);
-      _fetchLatestProfile();
-      return true;
-    } on fb.FirebaseAuthException catch (e) {
-      debugPrint("FirebaseAuthException code: ${e.code}");
-      debugPrint("FirebaseAuthException message: ${e.message}");
-      debugPrint(e.toString());
-      state = state.copyWith(
-        isLoading: false,
-        error: "${e.code}\n${e.message}",
-      );
-      return false;
-    } catch (e) {
-      state = state.copyWith(
-        isLoading: false,
-        error: 'Registration failed: ${e.toString()}',
-      );
-      return false;
-    }
+  Future<bool> loginWithGoogle() async {
+    state = state.copyWith(
+      isLoading: false,
+      error: 'Google Sign-In is temporarily unavailable. Please sign in using email and password.',
+    );
+    return false;
   }
 
   Future<void> sendOtp(String phoneNumber) async {
-    state = state.copyWith(isLoading: true, error: null);
-    final formattedPhone = phoneNumber.startsWith('+') ? phoneNumber : '+91$phoneNumber';
-
-    try {
-      await _firebaseService.verifyPhoneNumber(
-        phoneNumber: formattedPhone,
-        timeout: const Duration(seconds: 30),
-        verificationCompleted: (fb.PhoneAuthCredential credential) async {
-          debugPrint("verificationCompleted");
-          final userCredential = await _firebaseService.signInWithCredential(credential);
-          final idToken = await userCredential.user?.getIdToken();
-          if (idToken != null) {
-            await _syncPhoneLogin(idToken, formattedPhone);
-          }
-        },
-        verificationFailed: (fb.FirebaseAuthException e) {
-          debugPrint("verificationFailed");
-          debugPrint(e.code);
-          debugPrint(e.message);
-          state = state.copyWith(
-            isLoading: false,
-            error: "${e.code}\n${e.message}",
-          );
-        },
-        codeSent: (String verificationId, int? resendToken) {
-          debugPrint("codeSent");
-          _verificationId = verificationId;
-          _resendToken = resendToken;
-          state = state.copyWith(isLoading: false);
-        },
-        codeAutoRetrievalTimeout: (String verificationId) {
-          debugPrint("codeAutoRetrievalTimeout");
-          _verificationId = verificationId;
-        },
-      );
-    } on fb.FirebaseAuthException catch (e) {
-      debugPrint("FirebaseAuthException code: ${e.code}");
-      debugPrint("FirebaseAuthException message: ${e.message}");
-      debugPrint(e.toString());
-      state = state.copyWith(
-        isLoading: false,
-        error: "${e.code}\n${e.message}",
-      );
-    } catch (e) {
-      state = state.copyWith(
-        isLoading: false,
-        error: 'Failed to send OTP: ${e.toString()}',
-      );
-    }
+    state = state.copyWith(
+      isLoading: false,
+      error: 'Phone OTP verification is disabled pending SMS gateway configuration. Please use email authentication.',
+    );
   }
 
   Future<void> resendOtp(String phoneNumber) async {
-    state = state.copyWith(isLoading: true, error: null);
-    final formattedPhone = phoneNumber.startsWith('+') ? phoneNumber : '+91$phoneNumber';
-
-    try {
-      await _firebaseService.verifyPhoneNumber(
-        phoneNumber: formattedPhone,
-        timeout: const Duration(seconds: 30),
-        forceResendingToken: _resendToken,
-        verificationCompleted: (fb.PhoneAuthCredential credential) async {
-          debugPrint("verificationCompleted");
-          final userCredential = await _firebaseService.signInWithCredential(credential);
-          final idToken = await userCredential.user?.getIdToken();
-          if (idToken != null) {
-            await _syncPhoneLogin(idToken, formattedPhone);
-          }
-        },
-        verificationFailed: (fb.FirebaseAuthException e) {
-          debugPrint("verificationFailed");
-          debugPrint(e.code);
-          debugPrint(e.message);
-          state = state.copyWith(
-            isLoading: false,
-            error: "${e.code}\n${e.message}",
-          );
-        },
-        codeSent: (String verificationId, int? resendToken) {
-          debugPrint("codeSent");
-          _verificationId = verificationId;
-          _resendToken = resendToken;
-          state = state.copyWith(isLoading: false);
-        },
-        codeAutoRetrievalTimeout: (String verificationId) {
-          debugPrint("codeAutoRetrievalTimeout");
-          _verificationId = verificationId;
-        },
-      );
-    } on fb.FirebaseAuthException catch (e) {
-      debugPrint("FirebaseAuthException code: ${e.code}");
-      debugPrint("FirebaseAuthException message: ${e.message}");
-      debugPrint(e.toString());
-      state = state.copyWith(
-        isLoading: false,
-        error: "${e.code}\n${e.message}",
-      );
-    } catch (e) {
-      state = state.copyWith(
-        isLoading: false,
-        error: 'Failed to resend OTP: ${e.toString()}',
-      );
-    }
+    state = state.copyWith(
+      isLoading: false,
+      error: 'Phone OTP verification is disabled pending SMS gateway configuration.',
+    );
   }
 
   Future<bool> verifyOtp(String phoneNumber, String otp) async {
-    state = state.copyWith(isLoading: true, error: null);
-    final formattedPhone = phoneNumber.startsWith('+') ? phoneNumber : '+91$phoneNumber';
-
-    try {
-      if (_verificationId == null) {
-        throw Exception('Verification code has not been sent yet.');
-      }
-
-      final credential = fb.PhoneAuthProvider.credential(
-        verificationId: _verificationId!,
-        smsCode: otp,
-      );
-
-      final userCredential = await _firebaseService.signInWithCredential(credential);
-      final idToken = await userCredential.user?.getIdToken();
-      if (idToken == null) throw Exception('Failed to obtain Firebase ID Token.');
-
-      return await _syncPhoneLogin(idToken, formattedPhone);
-    } on fb.FirebaseAuthException catch (e) {
-      debugPrint("FirebaseAuthException code: ${e.code}");
-      debugPrint("FirebaseAuthException message: ${e.message}");
-      debugPrint(e.toString());
-      state = state.copyWith(
-        isLoading: false,
-        error: "${e.code}\n${e.message}",
-      );
-      return false;
-    } catch (e) {
-      state = state.copyWith(
-        isLoading: false,
-        error: 'Verification failed: ${e.toString()}',
-      );
-      return false;
-    }
+    state = state.copyWith(
+      isLoading: false,
+      error: 'Phone OTP verification is disabled pending SMS gateway configuration.',
+    );
+    return false;
   }
 
   Future<void> sendOtpForLinking(String phoneNumber) async {
-    state = state.copyWith(isLoading: true, error: null);
-    final formattedPhone = phoneNumber.startsWith('+') ? phoneNumber : '+91$phoneNumber';
-
-    try {
-      await _firebaseService.verifyPhoneNumber(
-        phoneNumber: formattedPhone,
-        timeout: const Duration(seconds: 30),
-        verificationCompleted: (fb.PhoneAuthCredential credential) async {
-          debugPrint("verificationCompleted for linking");
-          final currentUser = fb.FirebaseAuth.instance.currentUser;
-          if (currentUser != null) {
-            await currentUser.linkWithCredential(credential);
-            await _syncLinkedPhone(formattedPhone);
-          }
-        },
-        verificationFailed: (fb.FirebaseAuthException e) {
-          debugPrint("verificationFailed for linking");
-          debugPrint(e.code);
-          debugPrint(e.message);
-          state = state.copyWith(
-            isLoading: false,
-            error: "${e.code}\n${e.message}",
-          );
-        },
-        codeSent: (String verificationId, int? resendToken) {
-          debugPrint("codeSent for linking");
-          _verificationId = verificationId;
-          _resendToken = resendToken;
-          state = state.copyWith(isLoading: false);
-        },
-        codeAutoRetrievalTimeout: (String verificationId) {
-          debugPrint("codeAutoRetrievalTimeout for linking");
-          _verificationId = verificationId;
-        },
-      );
-    } on fb.FirebaseAuthException catch (e) {
-      debugPrint("FirebaseAuthException code: ${e.code}");
-      debugPrint("FirebaseAuthException message: ${e.message}");
-      state = state.copyWith(
-        isLoading: false,
-        error: "${e.code}\n${e.message}",
-      );
-    } catch (e) {
-      state = state.copyWith(
-        isLoading: false,
-        error: 'Failed to send OTP: ${e.toString()}',
-      );
-    }
+    state = state.copyWith(
+      isLoading: false,
+      error: 'Phone OTP verification is disabled pending SMS gateway configuration.',
+    );
   }
 
   Future<bool> verifyOtpForLinking(String phoneNumber, String otp) async {
-    state = state.copyWith(isLoading: true, error: null);
-    final formattedPhone = phoneNumber.startsWith('+') ? phoneNumber : '+91$phoneNumber';
-
-    try {
-      if (_verificationId == null) {
-        throw Exception('Verification code has not been sent yet.');
-      }
-
-      final credential = fb.PhoneAuthProvider.credential(
-        verificationId: _verificationId!,
-        smsCode: otp,
-      );
-
-      final currentUser = fb.FirebaseAuth.instance.currentUser;
-      if (currentUser == null) {
-        throw Exception('No user currently logged in to link phone to.');
-      }
-
-      await currentUser.linkWithCredential(credential);
-      debugPrint("Phone linking with Firebase SUCCESS");
-
-      return await _syncLinkedPhone(formattedPhone);
-    } on fb.FirebaseAuthException catch (e) {
-      debugPrint("FirebaseAuthException code: ${e.code}");
-      debugPrint("FirebaseAuthException message: ${e.message}");
-      state = state.copyWith(
-        isLoading: false,
-        error: "${e.code}\n${e.message}",
-      );
-      return false;
-    } catch (e) {
-      state = state.copyWith(
-        isLoading: false,
-        error: 'Verification failed: ${e.toString()}',
-      );
-      return false;
-    }
-  }
-
-  Future<bool> _syncLinkedPhone(String formattedPhone) async {
-    final userId = state.userId;
-    if (userId == null) return false;
-
-    try {
-      final response = await _apiClient.put('/auth/profile', data: {
-        'userId': userId,
-        'phoneNumber': formattedPhone,
-      });
-
-      final userMap = response.data;
-      await _storage.write(key: 'user_phone', value: formattedPhone);
-
-      state = state.copyWith(
-        isLoading: false,
-        userPhone: formattedPhone,
-      );
-      
-      await _fetchLatestProfile();
-      return true;
-    } catch (e) {
-      state = state.copyWith(
-        isLoading: false,
-        error: 'Failed to update phone in database: ${e.toString()}',
-      );
-      return false;
-    }
-  }
-
-  Future<bool> _syncPhoneLogin(String idToken, String formattedPhone) async {
-    final response = await _apiClient.post('/auth/otp-verify', data: {
-      'idToken': idToken,
-    });
-
-    final accessToken = response.data['access_token'] as String;
-    final refreshToken = response.data['refresh_token'] as String;
-
-    final userMap = response.data['user'];
-    await _saveSession(
-      accessToken: accessToken,
-      refreshToken: refreshToken,
-      firebaseUid: _firebaseService.currentUser?.uid ?? '',
-      userMap: userMap,
+    state = state.copyWith(
+      isLoading: false,
+      error: 'Phone OTP verification is disabled pending SMS gateway configuration.',
     );
-
-    state = AuthState(
-      isAuthenticated: true,
-      isGuest: false,
-      userId: userMap['id'] as String,
-      userName: userMap['name'] as String?,
-      userEmail: userMap['email'] as String?,
-      userPhone: formattedPhone,
-      userRole: userMap['role'] as String?,
-      userAvatar: userMap['avatarUrl'] as String?,
-    );
-    _logPostLogin(accessToken, _firebaseService.currentUser?.uid ?? '', userMap);
-    _fetchLatestProfile();
-    return true;
-  }
-
-  Future<bool> loginWithGoogle() async {
-    state = state.copyWith(isLoading: true, error: null);
-    try {
-      debugPrint("STEP 1\nGoogle popup opened");
-
-      // Use Firebase Auth's native signInWithPopup with GoogleAuthProvider.
-      // This completely bypasses the google_sign_in package which internally
-      // calls the Google People API (content-people.googleapis.com/v1/people/me)
-      // causing a 403 SERVICE_DISABLED error.
-      final googleProvider = fb.GoogleAuthProvider();
-      googleProvider.addScope('email');
-
-      final userCredential = await fb.FirebaseAuth.instance.signInWithPopup(googleProvider);
-
-      debugPrint("STEP 2\nGoogle account selected");
-      debugPrint("STEP 3\nGoogle accessToken received (via Firebase native)");
-      debugPrint("STEP 4\nGoogle idToken received (via Firebase native)");
-      debugPrint("STEP 5\nGoogleAuthProvider credential created (via Firebase native)");
-
-      debugPrint("STEP 6\nFirebaseAuth.signInWithPopup SUCCESS");
-      debugPrint("Firebase UID: ${userCredential.user?.uid}");
-      debugPrint("Email: ${userCredential.user?.email}");
-      debugPrint("DisplayName: ${userCredential.user?.displayName}");
-      debugPrint("PhotoURL: ${userCredential.user?.photoURL}");
-
-      if (userCredential.user == null) {
-        debugPrint("Google login failed: Firebase user is null after signInWithPopup.");
-        state = state.copyWith(isLoading: false);
-        return false;
-      }
-
-      final idToken = await userCredential.user!.getIdToken();
-      if (idToken == null) throw Exception('Failed to obtain Firebase ID Token.');
-      debugPrint("Firebase ID Token length: ${idToken.length}");
-
-      debugPrint("STEP 7\nBackend POST /auth/google called");
-      final response = await _apiClient.post('/auth/google', data: {
-        'idToken': idToken,
-      });
-
-      debugPrint("Backend response status: ${response.statusCode}");
-      debugPrint("Backend response body: ${response.data}");
-
-      final accessToken = response.data['access_token'] as String;
-      final refreshToken = response.data['refresh_token'] as String;
-      debugPrint("STEP 8\nBackend returns accessToken refreshToken");
-
-      final userMap = response.data['user'];
-      await _saveSession(
-        accessToken: accessToken,
-        refreshToken: refreshToken,
-        firebaseUid: userCredential.user!.uid,
-        userMap: userMap,
-      );
-      debugPrint("STEP 9\nSecureStorage write SUCCESS");
-      debugPrint("Saved keys:");
-      debugPrint("  access_token: $accessToken");
-      debugPrint("  refresh_token: $refreshToken");
-      debugPrint("  firebase_uid: ${userCredential.user!.uid}");
-      debugPrint("  user_id: ${userMap['id']}");
-      debugPrint("  user_name: ${userMap['name']}");
-      debugPrint("  user_email: ${userMap['email']}");
-      debugPrint("  user_phone: ${userMap['phoneNumber']}");
-      debugPrint("  user_role: ${userMap['role']}");
-      debugPrint("  user_avatar: ${userMap['avatarUrl']}");
-      debugPrint("  user_provider: ${userMap['provider']}");
-
-      // Read-back verification: confirm values were actually persisted
-      debugPrint("--- SecureStorage READ-BACK VERIFICATION ---");
-      for (final key in ['access_token', 'refresh_token', 'firebase_uid', 'user_id', 'user_name', 'user_email', 'user_phone', 'user_role', 'user_avatar', 'user_provider']) {
-        final val = await _storage.read(key: key);
-        debugPrint("  READ $key: $val");
-      }
-      debugPrint("--- END READ-BACK ---");
-
-      // Verify FirebaseAuth.currentUser is set
-      debugPrint("FirebaseAuth.instance.currentUser after signInWithPopup: ${fb.FirebaseAuth.instance.currentUser?.uid}");
-
-      state = AuthState(
-        isAuthenticated: true,
-        isGuest: false,
-        userId: userMap['id'] as String,
-        userName: userMap['name'] as String?,
-        userEmail: userMap['email'] as String?,
-        userPhone: userMap['phoneNumber'] as String?,
-        userRole: userMap['role'] as String?,
-        userAvatar: userMap['avatarUrl'] as String?,
-      );
-      debugPrint("STEP 10\nRiverpod AuthState updated");
-      debugPrint("isAuthenticated=true");
-      debugPrint("userName: ${state.userName}");
-      debugPrint("email: ${state.userEmail}");
-      debugPrint("uid: ${state.userId}");
-      debugPrint("role: ${state.userRole}");
-
-      _logPostLogin(accessToken, userCredential.user!.uid, userMap);
-      _fetchLatestProfile();
-
-      debugPrint("STEP 11\nNavigate Home");
-      return true;
-    } on fb.FirebaseAuthException catch (e) {
-      debugPrint("FirebaseAuthException code: ${e.code}");
-      debugPrint("FirebaseAuthException message: ${e.message}");
-      debugPrint(e.toString());
-      state = state.copyWith(
-        isLoading: false,
-        error: "${e.code}\n${e.message}",
-      );
-      return false;
-    } catch (e) {
-      debugPrint("Exception during Google Login: $e");
-      state = state.copyWith(
-        isLoading: false,
-        error: 'Google login failed: ${e.toString()}',
-      );
-      return false;
-    }
+    return false;
   }
 
   Future<bool> forgotPassword(String email) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      await _firebaseService.sendPasswordResetEmail(email);
+      await _apiClient.post('/auth/forgot-password', data: {'email': email.trim()});
       state = state.copyWith(isLoading: false);
       return true;
-    } on fb.FirebaseAuthException catch (e) {
-      debugPrint("FirebaseAuthException code: ${e.code}");
-      debugPrint("FirebaseAuthException message: ${e.message}");
-      debugPrint(e.toString());
-      state = state.copyWith(isLoading: false, error: "${e.code}\n${e.message}");
-      return false;
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
       return false;
@@ -1144,18 +681,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<bool> resetPassword(String token, String newPassword) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      await _firebaseService.confirmPasswordReset(
-        token,
-        newPassword,
-      );
+      await _apiClient.post('/auth/reset-password', data: {
+        'token': token,
+        'newPassword': newPassword,
+      });
       state = state.copyWith(isLoading: false);
       return true;
-    } on fb.FirebaseAuthException catch (e) {
-      debugPrint("FirebaseAuthException code: ${e.code}");
-      debugPrint("FirebaseAuthException message: ${e.message}");
-      debugPrint(e.toString());
-      state = state.copyWith(isLoading: false, error: "${e.code}\n${e.message}");
-      return false;
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
       return false;
@@ -1176,9 +707,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
         await _apiClient.post('/auth/logout?userId=$currentUserId');
       } catch (_) {}
     }
-    // _firebaseService.signOut() already calls both
-    // FirebaseAuth.signOut() and GoogleSignIn.signOut()
-    await _firebaseService.signOut();
     await _clearSession();
     state = AuthState();
   }

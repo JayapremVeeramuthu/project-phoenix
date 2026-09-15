@@ -61,45 +61,13 @@ class LoginSelectionScreen extends ConsumerWidget {
               ),
               const Spacer(),
 
-              // Primary Actions
+              // Primary Action: Email Login & Register
               ElevatedButton.icon(
                 onPressed: () => context.push(AppRouter.emailLogin),
                 icon: const Icon(Icons.email_outlined),
                 label: Text(localizations.translate('btn_login')),
                 style: ElevatedButton.styleFrom(
                   minimumSize: Size(double.infinity, isSeniorMode ? 64 : 52),
-                ),
-              ),
-              const SizedBox(height: 16),
-              OutlinedButton.icon(
-                onPressed: () => context.push(AppRouter.otpLogin),
-                icon: const Icon(Icons.phone_android_outlined),
-                label: Text(localizations.translate('btn_send_otp')),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: Size(double.infinity, isSeniorMode ? 64 : 52),
-                  side: BorderSide(
-                      color: Theme.of(context).colorScheme.primary, width: 2),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
-                ),
-              ),
-              const SizedBox(height: 16),
-              OutlinedButton.icon(
-                onPressed: () async {
-                  await ref
-                      .read(authNotifierProvider.notifier)
-                      .loginWithGoogle();
-                  if (context.mounted) {
-                    context.go(AppRouter.home);
-                  }
-                },
-                icon: const Icon(Icons.g_mobiledata_rounded, size: 28),
-                label: Text(localizations.translate('btn_google')),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: Size(double.infinity, isSeniorMode ? 64 : 52),
-                  side: BorderSide(color: Colors.grey.shade300, width: 1),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
                 ),
               ),
               const SizedBox(height: 24),

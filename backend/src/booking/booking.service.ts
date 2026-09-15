@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { RabbitmqService } from '../common/services/rabbitmq.service';
@@ -12,13 +12,52 @@ export class BookingService {
     private bookingGateway: BookingGateway,
   ) {}
 
-  async createBooking(dto: CreateBookingDto) {
+  async createBooking(dto: CreateBookingDto, authenticatedUserId?: string) {
+    const effectiveCustomerId = authenticatedUserId || dto.customerId;
+    if (!effectiveCustomerId) {
+      throw new BadRequestException('A valid customerId is required to create a booking.');
+    }
+
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(effectiveCustomerId);
+    const customer = await this.prisma.user.findFirst({
+      where: isUuid
+        ? { OR: [{ id: effectiveCustomerId }, { firebaseUid: effectiveCustomerId }] }
+        : { firebaseUid: effectiveCustomerId },
+    });
+
+    if (!customer) {
+      throw new BadRequestException(
+        `Customer with ID '${effectiveCustomerId}' does not exist in the database. Please log in with a valid account.`,
+      );
+    }
+
+    let propertyId = dto.propertyId;
+    const property = await this.prisma.property.findUnique({
+      where: { id: propertyId },
+    });
+    if (!property) {
+      let customerProperty = await this.prisma.property.findFirst({
+        where: { customerId: customer.id, deletedAt: null },
+      });
+      if (!customerProperty) {
+        customerProperty = await this.prisma.property.create({
+          data: {
+            customerId: customer.id,
+            name: 'Primary Residence',
+            address: dto.address,
+            installedAppliances: [],
+          },
+        });
+      }
+      propertyId = customerProperty.id;
+    }
+
     // 1. Create booking in PostgreSQL
     const booking = await this.prisma.booking.create({
       data: {
         localId: dto.localId,
-        customerId: dto.customerId,
-        propertyId: dto.propertyId,
+        customerId: customer.id,
+        propertyId: propertyId,
         serviceId: dto.serviceId,
         address: dto.address,
         scheduledAt: new Date(dto.scheduledAt),
@@ -34,7 +73,7 @@ export class BookingService {
         status: 'WAITING_FOR_TECHNICIAN',
       },
     });
-    console.log('[BookingService] Created Booking in PostgreSQL. UUID:', booking.id);
+    console.log('[BookingService] Created Booking in PostgreSQL. UUID:', booking.id, 'Customer UUID:', customer.id);
 
     // 2. Initialize tracking timeline step
     await this.prisma.bookingTimeline.create({

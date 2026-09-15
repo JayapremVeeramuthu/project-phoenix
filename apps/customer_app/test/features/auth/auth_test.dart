@@ -1,87 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:dio/dio.dart';
-import 'package:firebase_auth/firebase_auth.dart' as fb;
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_api/shared_api.dart';
-import 'package:project_phoenix_customer/features/auth/data/firebase_service.dart';
 import 'package:project_phoenix_customer/features/auth/presentation/auth_notifier.dart';
-
-class MockUser implements fb.User {
-  @override
-  Future<String?> getIdToken([bool forceRefresh = false]) async => 'mock_firebase_id_token';
-
-  @override
-  String get uid => 'mock_firebase_uid';
-
-  @override
-  String? get email => 'test@phoenix.in';
-
-  @override
-  String? get phoneNumber => '+919876543210';
-
-  @override
-  String? get displayName => 'Rajesh Kumar';
-
-  @override
-  Future<void> sendEmailVerification([fb.ActionCodeSettings? actionCodeSettings]) async {}
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
-class MockUserCredential implements fb.UserCredential {
-  @override
-  fb.User get user => MockUser();
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
-class FakeFirebaseService implements FirebaseService {
-  @override
-  fb.User? get currentUser => null;
-
-  @override
-  Future<fb.UserCredential> signInWithEmailAndPassword(String email, String password) async {
-    return MockUserCredential();
-  }
-
-  @override
-  Future<fb.UserCredential> createUserWithEmailAndPassword(String email, String password) async {
-    return MockUserCredential();
-  }
-
-  @override
-  Future<void> sendPasswordResetEmail(String email) async {}
-
-  @override
-  Future<void> confirmPasswordReset(String code, String newPassword) async {}
-
-  @override
-  Future<void> signOut() async {}
-
-  @override
-  Future<GoogleSignInAccount?> signInWithGoogle() async => null;
-
-  @override
-  Future<fb.UserCredential> signInWithCredential(fb.AuthCredential credential) async {
-    return MockUserCredential();
-  }
-
-  @override
-  Future<void> verifyPhoneNumber({
-    required String phoneNumber,
-    required Duration timeout,
-    required fb.PhoneVerificationCompleted verificationCompleted,
-    required fb.PhoneVerificationFailed verificationFailed,
-    required fb.PhoneCodeSent codeSent,
-    required fb.PhoneCodeAutoRetrievalTimeout codeAutoRetrievalTimeout,
-    int? forceResendingToken,
-  }) async {
-    codeSent('mock_verification_id', 12345);
-  }
-}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -97,7 +18,7 @@ void main() {
       apiClient = ApiClient(baseUrl: AppConfig.apiUrl);
       apiClient.dio.interceptors.add(InterceptorsWrapper(
         onRequest: (options, handler) {
-          if (options.path.contains('/auth/login') || options.path.contains('/auth/email-login')) {
+          if (options.path.contains('/auth/login')) {
             if (shouldSucceed) {
               handler.resolve(Response(
                 requestOptions: options,
@@ -110,6 +31,7 @@ void main() {
                     'name': 'Rajesh Kumar',
                     'email': 'test@phoenix.in',
                     'phoneNumber': '+919876543210',
+                    'role': 'CUSTOMER',
                   }
                 },
               ));
@@ -118,8 +40,37 @@ void main() {
                 requestOptions: options,
                 response: Response(
                   requestOptions: options,
-                  statusCode: 400,
+                  statusCode: 401,
                   data: {'message': 'Invalid credentials'},
+                ),
+                type: DioExceptionType.badResponse,
+              ));
+            }
+          } else if (options.path.contains('/auth/register')) {
+            if (shouldSucceed) {
+              final data = options.data as Map<String, dynamic>;
+              handler.resolve(Response(
+                requestOptions: options,
+                statusCode: 201,
+                data: {
+                  'access_token': 'mock_register_access_token',
+                  'refresh_token': 'mock_register_refresh_token',
+                  'user': {
+                    'id': 'cust-uuid-998877',
+                    'name': data['name'] ?? 'New Customer',
+                    'email': data['email'] ?? 'new@phoenix.in',
+                    'phoneNumber': data['phoneNumber'] ?? '+919876500000',
+                    'role': 'CUSTOMER',
+                  }
+                },
+              ));
+            } else {
+              handler.reject(DioException(
+                requestOptions: options,
+                response: Response(
+                  requestOptions: options,
+                  statusCode: 409,
+                  data: {'message': 'User already exists'},
                 ),
                 type: DioExceptionType.badResponse,
               ));
@@ -166,7 +117,7 @@ void main() {
           }
         },
       ));
-      authNotifier = AuthNotifier(apiClient, firebaseService: FakeFirebaseService());
+      authNotifier = AuthNotifier(apiClient);
     });
 
     test('Initial state is unauthenticated and guest false', () {
@@ -181,6 +132,21 @@ void main() {
       expect(authNotifier.state.isGuest, true);
     });
 
+    test('registerWithEmail success creates session with JWT and User.id', () async {
+      shouldSucceed = true;
+      final success = await authNotifier.registerWithEmail(
+        name: 'New Customer',
+        email: 'new@phoenix.in',
+        phoneNumber: '+919876500000',
+        password: 'Password123!',
+      );
+      expect(success, true);
+      expect(authNotifier.state.isAuthenticated, true);
+      expect(authNotifier.state.userId, 'cust-uuid-998877');
+      expect(authNotifier.state.userEmail, 'new@phoenix.in');
+      expect(authNotifier.state.userName, 'New Customer');
+    });
+
     test('loginWithEmail validation success updates state', () async {
       shouldSucceed = true;
       final success =
@@ -188,6 +154,7 @@ void main() {
       expect(success, true);
       expect(authNotifier.state.isAuthenticated, true);
       expect(authNotifier.state.isGuest, false);
+      expect(authNotifier.state.userId, 'cust-uuid-112233');
       expect(authNotifier.state.userEmail, 'test@phoenix.in');
     });
 
@@ -207,6 +174,7 @@ void main() {
       await authNotifier.logout();
       expect(authNotifier.state.isAuthenticated, false);
       expect(authNotifier.state.userEmail, null);
+      expect(authNotifier.state.userId, null);
     });
 
     test('updateAddress saves new address to state and database', () async {
@@ -231,7 +199,6 @@ void main() {
       shouldSucceed = true;
       await authNotifier.loginWithEmail('test@phoenix.in', 'password123');
 
-      // Update address first
       await authNotifier.updateAddress(
         address: 'No. 42 Gandhi Mandapam Road',
         city: 'Chennai',
@@ -240,7 +207,6 @@ void main() {
       );
       expect(authNotifier.state.address, 'No. 42 Gandhi Mandapam Road');
 
-      // Now delete address
       final deleteSuccess = await authNotifier.deleteAddress();
       expect(deleteSuccess, true);
       expect(authNotifier.state.address, null);
