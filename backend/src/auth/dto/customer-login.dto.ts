@@ -11,9 +11,4 @@ export class CustomerLoginDto {
   @IsString()
   @IsOptional()
   password?: string;
-
-  @ApiProperty({ example: 'legacy-firebase-id-token', required: false })
-  @IsString()
-  @IsOptional()
-  idToken?: string;
 }

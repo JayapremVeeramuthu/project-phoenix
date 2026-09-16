@@ -1,11 +1,7 @@
-jest.mock('firebase-admin/app', () => ({
-  initializeApp: jest.fn(),
-  cert: jest.fn(),
-  getApps: jest.fn(() => []),
-}));
-jest.mock('firebase-admin/auth', () => ({
-  getAuth: jest.fn(() => ({
-    verifyIdToken: jest.fn(),
+const mockVerifyIdToken = jest.fn();
+jest.mock('google-auth-library', () => ({
+  OAuth2Client: jest.fn().mockImplementation(() => ({
+    verifyIdToken: mockVerifyIdToken,
   })),
 }));
 
@@ -197,6 +193,120 @@ describe('AuthService', () => {
 
       expect(result).toHaveProperty('access_token');
       expect(result.user.technicianId).toBe('TECH-001');
+    });
+  });
+
+  describe('googleLogin', () => {
+    it('should throw BadRequestException if idToken is missing', async () => {
+      await expect(service.googleLogin('')).rejects.toThrow(BadRequestException);
+    });
+
+    it('should successfully authenticate existing user via Google OAuth and return JWT tokens', async () => {
+      mockVerifyIdToken.mockResolvedValueOnce({
+        getPayload: () => ({
+          sub: 'google-sub-123',
+          email: 'google.user@example.com',
+          name: 'Google User',
+          picture: 'https://example.com/avatar.png',
+        }),
+      });
+
+      const existingUser = {
+        id: 'cust-google-uuid',
+        googleId: 'google-sub-123',
+        email: 'google.user@example.com',
+        name: 'Google User',
+        role: 'CUSTOMER',
+        avatarUrl: 'https://example.com/avatar.png',
+      };
+      mockPrismaService.user.findUnique.mockResolvedValueOnce(existingUser);
+      mockPrismaService.user.update.mockResolvedValueOnce(existingUser);
+
+      const result = await service.googleLogin('valid-google-id-token');
+
+      expect(result).toHaveProperty('access_token');
+      expect(result).toHaveProperty('refresh_token');
+      expect(result.user.id).toBe('cust-google-uuid');
+      expect(result.user.email).toBe('google.user@example.com');
+    });
+
+    it('should provision new customer in PostgreSQL when signing in with Google for the first time', async () => {
+      mockVerifyIdToken.mockResolvedValueOnce({
+        getPayload: () => ({
+          sub: 'google-sub-new',
+          email: 'new.google@example.com',
+          name: 'New Google Customer',
+          picture: 'https://example.com/new-avatar.png',
+        }),
+      });
+
+      mockPrismaService.user.findUnique.mockResolvedValue(null);
+      const newUser = {
+        id: 'new-google-user-uuid',
+        googleId: 'google-sub-new',
+        email: 'new.google@example.com',
+        name: 'New Google Customer',
+        role: 'CUSTOMER',
+        avatarUrl: 'https://example.com/new-avatar.png',
+      };
+      mockPrismaService.user.create.mockResolvedValueOnce(newUser);
+      mockPrismaService.user.update.mockResolvedValueOnce(newUser);
+
+      const result = await service.googleLogin('valid-google-id-token');
+
+      expect(result).toHaveProperty('access_token');
+      expect(result).toHaveProperty('refresh_token');
+      expect(result.user.id).toBe('new-google-user-uuid');
+      expect(mockPrismaService.user.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            googleId: 'google-sub-new',
+            email: 'new.google@example.com',
+            role: 'CUSTOMER',
+            provider: 'google',
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('getProfile, updateProfile, deleteAddress, deleteAccount', () => {
+    it('should retrieve user profile successfully', async () => {
+      const validUuid = '11111111-1111-1111-1111-111111111111';
+      const user = {
+        id: validUuid,
+        name: 'Test Customer',
+        email: 'test@customer.com',
+        role: 'CUSTOMER',
+      };
+      mockPrismaService.user.findUnique.mockResolvedValueOnce(user);
+
+      const result = await service.getProfile(validUuid);
+      expect(result.id).toBe(validUuid);
+      expect(result.name).toBe('Test Customer');
+    });
+
+    it('should soft delete account on deleteAccount', async () => {
+      const validUuid = '11111111-1111-1111-1111-111111111111';
+      const user = {
+        id: validUuid,
+        role: 'CUSTOMER',
+        isFounder: false,
+      };
+      mockPrismaService.user.findUnique.mockResolvedValueOnce(user);
+      mockPrismaService.user.update.mockResolvedValueOnce({ ...user, isActive: false });
+
+      const result = await service.deleteAccount(validUuid);
+      expect(result.message).toBe('Account successfully deleted.');
+      expect(mockPrismaService.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: validUuid },
+          data: expect.objectContaining({
+            isActive: false,
+            refreshToken: null,
+          }),
+        }),
+      );
     });
   });
 });

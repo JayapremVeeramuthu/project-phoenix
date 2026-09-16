@@ -340,13 +340,10 @@ class BookingNotifier extends StateNotifier<BookingFormState> {
         }
       }
 
-      // Fallback or retrieve default customer properties
-      final propertyId = 'b87fa109-178c-42b7-8977-628d08cb5f09'; // Default Seed Property UUID
-
       final bookingDto = BookingDto(
         localId: bookingId,
-        customerId: customerId == 'guest-id' ? 'e0e84430-6e08-46d2-b96f-e95a2e235341' : customerId,
-        propertyId: propertyId,
+        customerId: customerId,
+        propertyId: '',
         address: state.address,
         serviceIds: state.services.map((s) => s.id).toList(),
         scheduledAt: state.date?.toIso8601String() ?? DateTime.now().toIso8601String(),
@@ -380,8 +377,8 @@ class BookingNotifier extends StateNotifier<BookingFormState> {
         // Only true network failures use the SQLite offline queue
         final offlineBooking = {
           'local_id': bookingId,
-          'customer_id': customerId == 'guest-id' ? 'e0e84430-6e08-46d2-b96f-e95a2e235341' : customerId,
-          'property_id': 'b87fa109-178c-42b7-8977-628d08cb5f09',
+          'customer_id': customerId,
+          'property_id': '',
           'address': state.address,
           'service_id': serviceIdsCombined,
           'scheduled_at': state.date?.toIso8601String() ?? DateTime.now().toIso8601String(),

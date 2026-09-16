@@ -2,7 +2,7 @@ import { Controller, Post, Get, Patch, Body, Query, ParseIntPipe, Param, HttpCod
 import { ApiTags, ApiOperation, ApiQuery, ApiResponse } from '@nestjs/swagger';
 import { BookingService } from './booking.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
-import { OptionalJwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { JwtAuthGuard, OptionalJwtAuthGuard } from '../common/guards/jwt-auth.guard';
 
 @ApiTags('Bookings')
 @Controller('bookings')
@@ -10,16 +10,16 @@ export class BookingController {
   constructor(private bookingService: BookingService) {}
 
   @Post()
-  @UseGuards(OptionalJwtAuthGuard)
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Create a new service booking' })
   @ApiResponse({ status: 201, description: 'Booking successfully created' })
   async createBooking(@Body() dto: CreateBookingDto, @Req() req: any) {
-    const authenticatedUserId = req.user?.sub || req.user?.id;
-    return this.bookingService.createBooking(dto, authenticatedUserId);
+    const customerId = req.user?.id || req.user?.sub;
+    return this.bookingService.createBooking(dto, customerId);
   }
 
   @Get()
-  @UseGuards(OptionalJwtAuthGuard)
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'List all bookings with pagination' })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
@@ -30,7 +30,7 @@ export class BookingController {
     @Query('limit', new ParseIntPipe({ optional: true })) limit = 10,
     @Query('customerId') customerId?: string,
   ) {
-    const effectiveCustomerId = customerId || (req.user?.role === 'CUSTOMER' ? (req.user.sub || req.user.id) : undefined);
+    const effectiveCustomerId = req.user?.role === 'CUSTOMER' ? (req.user.id || req.user.sub) : customerId;
     return this.bookingService.getBookings(page, limit, effectiveCustomerId);
   }
 

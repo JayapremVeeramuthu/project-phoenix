@@ -33,7 +33,6 @@ COPY --from=builder /usr/src/app/dist ./dist
 COPY --from=builder /usr/src/app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /usr/src/app/node_modules/@prisma/client ./node_modules/@prisma/client
 COPY prisma ./prisma
-COPY --from=builder /usr/src/app/firebase ./firebase
 
 EXPOSE 3000
 

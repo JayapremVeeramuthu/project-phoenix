@@ -120,9 +120,6 @@ services:
       JWT_REFRESH_SECRET: "phoenix_jwt_refresh_secret_key_654321"
       JWT_ACCESS_EXPIRY: "15m"
       JWT_REFRESH_EXPIRY: "7d"
-      FIREBASE_CREDENTIALS_PATH: "/usr/src/app/firebase/serviceAccountKey.json"
-    volumes:
-      - ./backend/firebase:/usr/src/app/firebase:ro
     depends_on:
       postgres:
         condition: service_healthy

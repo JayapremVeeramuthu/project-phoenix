@@ -21,8 +21,9 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { TechnicianLoginDto } from './dto/technician-login.dto';
 import { TechnicianAvailabilityDto } from './dto/technician-availability.dto';
 import { AdminLoginDto } from './dto/admin-login.dto';
+import { GoogleLoginDto } from './dto/google-login.dto';
 import { RateLimiterGuard } from '../common/guards/rate-limiter.guard';
-import { OptionalJwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { JwtAuthGuard, OptionalJwtAuthGuard } from '../common/guards/jwt-auth.guard';
 
 @ApiTags('Authentication')
 @Controller('auth')
@@ -80,7 +81,7 @@ export class AuthController {
   @Post('google')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Authenticate user Google Sign-In' })
-  async googleLogin(@Body() dto: any) {
+  async googleLogin(@Body() dto: GoogleLoginDto) {
     return this.authService.googleLogin(dto.idToken);
   }
 
@@ -95,7 +96,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Verify OTP code' })
   async otpVerify(@Body() dto: any) {
-    return this.authService.otpVerify(dto.idToken);
+    return this.authService.otpVerify(dto);
   }
 
   @Post('otp-resend')
@@ -120,51 +121,50 @@ export class AuthController {
   }
 
   @Post('logout')
-  @UseGuards(OptionalJwtAuthGuard)
+  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Invalidate user sessions and delete refresh tokens' })
-  async logout(@Req() req: any, @Query('userId') userId?: string) {
-    const effectiveUserId = req.user?.sub || req.user?.id || userId;
-    if (!effectiveUserId) {
-      return { message: 'Logout completed.' };
-    }
-    return this.authService.logout(effectiveUserId);
+  async logout(@Req() req: any) {
+    const userId = req.user?.id || req.user?.sub;
+    return this.authService.logout(userId);
   }
 
   @Get('profile')
-  @UseGuards(OptionalJwtAuthGuard)
+  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Retrieve user profile statistics and properties' })
-  async getProfile(@Req() req: any, @Query('userId') userId?: string) {
-    const effectiveUserId = req.user?.sub || req.user?.id || userId;
-    if (!effectiveUserId) {
-      throw new BadRequestException('User ID or Bearer token is required.');
-    }
-    return this.authService.getProfile(effectiveUserId);
+  async getProfile(@Req() req: any) {
+    const userId = req.user?.id || req.user?.sub;
+    return this.authService.getProfile(userId);
   }
 
   @Put('profile')
-  @UseGuards(OptionalJwtAuthGuard)
+  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Update user profile details' })
   async updateProfile(@Req() req: any, @Body() dto: UpdateProfileDto) {
-    if (!dto.userId && (req.user?.sub || req.user?.id)) {
-      dto.userId = req.user?.sub || req.user?.id;
-    }
+    dto.userId = req.user?.id || req.user?.sub;
     return this.authService.updateProfile(dto);
   }
 
   @Delete('address')
-  @UseGuards(OptionalJwtAuthGuard)
+  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Delete user address' })
-  async deleteAddress(@Req() req: any, @Query('userId') userId?: string) {
-    const effectiveUserId = req.user?.sub || req.user?.id || userId;
-    if (!effectiveUserId) {
-      throw new BadRequestException('User ID or Bearer token is required.');
-    }
-    return this.authService.deleteAddress(effectiveUserId);
+  async deleteAddress(@Req() req: any) {
+    const userId = req.user?.id || req.user?.sub;
+    return this.authService.deleteAddress(userId);
+  }
+
+  @Delete('account')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Soft-delete user account and invalidate session' })
+  @ApiResponse({ status: 200, description: 'Account deleted successfully' })
+  async deleteAccount(@Req() req: any) {
+    const userId = req.user?.id || req.user?.sub;
+    return this.authService.deleteAccount(userId);
   }
 
   @Post('technician/change-password')

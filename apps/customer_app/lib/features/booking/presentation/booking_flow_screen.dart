@@ -17,6 +17,7 @@ import 'package:project_phoenix_customer/features/services/data/repositories/ser
 import 'package:project_phoenix_customer/features/services/domain/entities/service_item.dart';
 import 'package:project_phoenix_customer/features/booking/data/repositories/booking_repository.dart';
 import 'package:shared_models/shared_models.dart';
+import 'package:shared_theme/shared_theme.dart';
 
 class ImageUploadTracker {
   final String id;
@@ -1904,7 +1905,47 @@ class _BookingFlowScreenState extends ConsumerState<BookingFlowScreen> {
   }
 
   Future<void> _confirmBookingFlow() async {
-    final customerId = ref.read(authNotifierProvider).userId ?? 'guest-id';
+    final authState = ref.read(authNotifierProvider);
+    if (!authState.isAuthenticated || authState.userId == null || authState.userId!.isEmpty) {
+      final shouldLogin = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              const Icon(Icons.lock_outline_rounded, color: AppTheme.primaryTeal),
+              const SizedBox(width: 8),
+              const Text('Sign In Required'),
+            ],
+          ),
+          content: const Text(
+            'You must be signed in to confirm your booking and assign a certified technician. Your booking draft will be safely saved.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primaryTeal,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Sign In / Register'),
+            ),
+          ],
+        ),
+      );
+
+      if (shouldLogin == true && mounted) {
+        context.push(AppRouter.authSelection);
+      }
+      return;
+    }
+
+    final customerId = authState.userId!;
     final success = await ref
         .read(bookingNotifierProvider.notifier)
         .confirmBooking(customerId);

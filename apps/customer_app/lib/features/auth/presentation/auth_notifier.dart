@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_api/shared_api.dart';
+import 'package:project_phoenix_customer/features/auth/data/google_auth_service.dart';
 
 class AuthState {
   final bool isAuthenticated;
@@ -87,11 +88,13 @@ class AuthState {
 class AuthNotifier extends StateNotifier<AuthState> {
   final ApiClient _apiClient;
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
+  final GoogleAuthService _googleAuthService;
 
   AuthNotifier(
     this._apiClient, {
-    Object? firebaseService,
-  }) : super(AuthState()) {
+    GoogleAuthService? googleAuthService,
+  })  : _googleAuthService = googleAuthService ?? GoogleAuthService(),
+        super(AuthState()) {
     _checkAutoLogin();
   }
 
@@ -192,10 +195,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> _fetchLatestProfile() async {
-    final userId = state.userId;
-    if (userId == null) return;
+    final token = await _storage.read(key: 'access_token');
+    if (token == null) return;
     try {
-      final response = await _apiClient.get('/auth/profile?userId=$userId');
+      final response = await _apiClient.get('/auth/profile');
       final userMap = response.data;
 
       await _storage.write(key: 'user_name', value: userMap['name'] as String? ?? '');
@@ -227,7 +230,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       );
     } catch (e) {
       debugPrint('Failed to refresh profile cache: ${e.toString()}');
-      if (e is ApiException && e.statusCode == 401) {
+      if (e is ApiException && (e.statusCode == 401 || e.statusCode == 400 || e.statusCode == 404)) {
         await logout();
       }
     }
@@ -428,7 +431,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
     try {
       final response = await _apiClient.put('/auth/profile', data: {
-        'userId': userId,
         'name': name,
         'email': email,
         'phoneNumber': phoneNumber,
@@ -477,12 +479,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(isLoading: true, error: null);
 
     try {
-      final response = await _apiClient.put('/auth/profile', data: {
-        'userId': userId,
+      await _apiClient.put('/auth/profile', data: {
         'avatarUrl': imageUrl,
       });
 
-      final userMap = response.data;
       await _storage.write(key: 'user_avatar', value: imageUrl);
 
       state = state.copyWith(
@@ -535,7 +535,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(isLoading: true, error: null);
 
     final payload = {
-      'userId': userId,
       'address': address,
       'city': effectiveCity,
       'state': effectiveState,
@@ -600,7 +599,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(isLoading: true, error: null);
 
     try {
-      await _apiClient.delete('/auth/address?userId=$userId');
+      await _apiClient.delete('/auth/address');
 
       await _storage.delete(key: 'user_address');
       await _storage.delete(key: 'user_city');
@@ -622,11 +621,64 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   Future<bool> loginWithGoogle() async {
-    state = state.copyWith(
-      isLoading: false,
-      error: 'Google Sign-In is temporarily unavailable. Please sign in using email and password.',
-    );
-    return false;
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      final idToken = await _googleAuthService.signInAndGetIdToken();
+      if (idToken == null || idToken.isEmpty) {
+        state = state.copyWith(isLoading: false);
+        return false;
+      }
+
+      final response = await _apiClient.post('/auth/google', data: {
+        'idToken': idToken,
+      });
+
+      final accessToken = response.data['access_token'] as String;
+      final refreshToken = response.data['refresh_token'] as String;
+      final userMap = response.data['user'] as Map<String, dynamic>;
+
+      await _saveSession(
+        accessToken: accessToken,
+        refreshToken: refreshToken,
+        userMap: userMap,
+      );
+
+      state = AuthState(
+        isAuthenticated: true,
+        isGuest: false,
+        userId: userMap['id'] as String,
+        userName: userMap['name'] as String?,
+        userEmail: userMap['email'] as String?,
+        userPhone: userMap['phoneNumber'] as String?,
+        userRole: userMap['role'] as String?,
+        userAvatar: userMap['avatarUrl'] as String?,
+        gender: userMap['gender'] as String?,
+        dateOfBirth: userMap['dateOfBirth'] as String?,
+        address: userMap['address'] as String?,
+        city: userMap['city'] as String?,
+        state: userMap['state'] as String?,
+        pincode: userMap['pincode'] as String?,
+        provider: userMap['provider'] as String? ?? 'google',
+      );
+
+      _logPostLogin(accessToken, userMap);
+      _fetchLatestProfile();
+      return true;
+    } on ApiException catch (e) {
+      debugPrint("Google login ApiException: ${e.statusCode} ${e.message}");
+      state = state.copyWith(
+        isLoading: false,
+        error: e.message.isNotEmpty ? e.message : 'Google authentication failed',
+      );
+      return false;
+    } catch (e) {
+      debugPrint("Google login error: $e");
+      state = state.copyWith(
+        isLoading: false,
+        error: 'Google Sign-In failed: ${e.toString()}',
+      );
+      return false;
+    }
   }
 
   Future<void> sendOtp(String phoneNumber) async {
@@ -644,11 +696,51 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   Future<bool> verifyOtp(String phoneNumber, String otp) async {
-    state = state.copyWith(
-      isLoading: false,
-      error: 'Phone OTP verification is disabled pending SMS gateway configuration.',
-    );
-    return false;
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      final response = await _apiClient.post('/auth/otp-verify', data: {
+        'phoneNumber': phoneNumber.trim(),
+        'otp': otp.trim(),
+      });
+
+      final accessToken = response.data['access_token'] as String;
+      final refreshToken = response.data['refresh_token'] as String;
+      final userMap = response.data['user'] as Map<String, dynamic>;
+
+      await _saveSession(
+        accessToken: accessToken,
+        refreshToken: refreshToken,
+        userMap: userMap,
+      );
+
+      state = AuthState(
+        isAuthenticated: true,
+        isGuest: false,
+        userId: userMap['id'] as String,
+        userName: userMap['name'] as String?,
+        userEmail: userMap['email'] as String?,
+        userPhone: userMap['phoneNumber'] as String?,
+        userRole: userMap['role'] as String? ?? 'CUSTOMER',
+        userAvatar: userMap['avatarUrl'] as String?,
+        provider: 'phone',
+      );
+
+      _logPostLogin(accessToken, userMap);
+      _fetchLatestProfile();
+      return true;
+    } on ApiException catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        error: e.message.isNotEmpty ? e.message : 'OTP verification failed',
+      );
+      return false;
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        error: 'Verification failed: ${e.toString()}',
+      );
+      return false;
+    }
   }
 
   Future<void> sendOtpForLinking(String phoneNumber) async {
@@ -701,14 +793,35 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> logout() async {
-    final currentUserId = state.userId;
-    if (currentUserId != null) {
-      try {
-        await _apiClient.post('/auth/logout?userId=$currentUserId');
-      } catch (_) {}
-    }
+    try {
+      await _apiClient.post('/auth/logout');
+    } catch (_) {}
+    await _googleAuthService.signOut();
     await _clearSession();
     state = AuthState();
+  }
+
+  Future<bool> deleteAccount() async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      await _apiClient.delete('/auth/account');
+      await _googleAuthService.signOut();
+      await _clearSession();
+      state = AuthState();
+      return true;
+    } on ApiException catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        error: e.message.isNotEmpty ? e.message : 'Failed to delete account',
+      );
+      return false;
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        error: 'Failed to delete account: ${e.toString()}',
+      );
+      return false;
+    }
   }
 }
 

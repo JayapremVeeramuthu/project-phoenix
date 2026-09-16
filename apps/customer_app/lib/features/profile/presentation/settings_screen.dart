@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:project_phoenix_customer/core/routing/app_router.dart';
 import 'package:project_phoenix_customer/core/theme/settings_provider.dart';
+import 'package:project_phoenix_customer/features/auth/presentation/auth_notifier.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -175,7 +178,64 @@ class SettingsScreen extends ConsumerWidget {
               ),
             ),
           ),
-          const SizedBox(height: 32),
+          // Account Management (if authenticated)
+          if (ref.watch(authNotifierProvider).isAuthenticated) ...[
+            _buildSectionHeader('Account & Privacy', theme),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.delete_forever_rounded, color: Colors.red),
+                title: const Text(
+                  'Delete Account',
+                  style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                ),
+                subtitle: const Text('Permanently delete your profile and account data'),
+                onTap: () async {
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      title: const Text('Delete Account?'),
+                      content: const Text(
+                        'Are you sure you want to permanently delete your account? All your personal information and active sessions will be deactivated. This action cannot be undone.',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(ctx).pop(false),
+                          child: const Text('Cancel'),
+                        ),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            foregroundColor: Colors.white,
+                          ),
+                          onPressed: () => Navigator.of(ctx).pop(true),
+                          child: const Text('Delete Permanently'),
+                        ),
+                      ],
+                    ),
+                  );
+
+                  if (confirm == true && context.mounted) {
+                    final success = await ref.read(authNotifierProvider.notifier).deleteAccount();
+                    if (context.mounted) {
+                      if (success) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Your account has been deleted.')),
+                        );
+                        context.go(AppRouter.authSelection);
+                      } else {
+                        final error = ref.read(authNotifierProvider).error ?? 'Failed to delete account';
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(error)),
+                        );
+                      }
+                    }
+                  }
+                },
+              ),
+            ),
+            const SizedBox(height: 20),
+          ],
 
           // App Info
           Center(

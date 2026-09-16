@@ -50,9 +50,7 @@ dependencies:
   shared_models:
     path: ../../packages/shared_models
 
-  # Firebase & Google Authentication
-  firebase_core: ^2.31.1
-  firebase_auth: ^4.20.0
+  # Google Authentication
   google_sign_in: ^6.2.1
   image_picker: ^1.0.7
 

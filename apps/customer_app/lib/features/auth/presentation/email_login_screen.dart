@@ -323,6 +323,51 @@ class _EmailLoginScreenState extends ConsumerState<EmailLoginScreen> {
                           style: TextStyle(fontSize: isSeniorMode ? 18 : 16),
                         ),
                 ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    const Expanded(child: Divider()),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Text(
+                        'OR',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.outline,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    const Expanded(child: Divider()),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                OutlinedButton.icon(
+                  onPressed: authState.isLoading
+                      ? null
+                      : () async {
+                          final success = await ref
+                              .read(authNotifierProvider.notifier)
+                              .loginWithGoogle();
+                          if (success && mounted && context.mounted) {
+                            context.go(AppRouter.home);
+                          }
+                        },
+                  icon: const Icon(Icons.account_circle_outlined, size: 24),
+                  label: Text(
+                    localizations.translate('btn_google'),
+                    style: TextStyle(
+                      fontSize: isSeniorMode ? 18 : 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: Size(double.infinity, isSeniorMode ? 64 : 52),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),

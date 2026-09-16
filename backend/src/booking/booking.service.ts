@@ -19,10 +19,12 @@ export class BookingService {
     }
 
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(effectiveCustomerId);
-    const customer = await this.prisma.user.findFirst({
-      where: isUuid
-        ? { OR: [{ id: effectiveCustomerId }, { firebaseUid: effectiveCustomerId }] }
-        : { firebaseUid: effectiveCustomerId },
+    if (!isUuid) {
+      throw new BadRequestException(`Invalid customer identifier '${effectiveCustomerId}'. A valid UUID is required.`);
+    }
+
+    const customer = await this.prisma.user.findUnique({
+      where: { id: effectiveCustomerId },
     });
 
     if (!customer) {
@@ -32,9 +34,13 @@ export class BookingService {
     }
 
     let propertyId = dto.propertyId;
-    const property = await this.prisma.property.findUnique({
-      where: { id: propertyId },
-    });
+    const isPropUuid = propertyId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(propertyId);
+    let property = isPropUuid
+      ? await this.prisma.property.findFirst({
+          where: { id: propertyId, customerId: customer.id, deletedAt: null },
+        })
+      : null;
+
     if (!property) {
       let customerProperty = await this.prisma.property.findFirst({
         where: { customerId: customer.id, deletedAt: null },

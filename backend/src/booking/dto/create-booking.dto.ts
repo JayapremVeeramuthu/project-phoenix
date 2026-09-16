@@ -12,10 +12,10 @@ export class CreateBookingDto {
   @IsOptional()
   customerId?: string;
 
-  @ApiProperty({ example: 'property-uuid-here' })
+  @ApiProperty({ example: 'property-uuid-here', required: false })
   @IsString()
-  @IsNotEmpty()
-  propertyId: string;
+  @IsOptional()
+  propertyId?: string;
 
   @ApiProperty({ example: 'elec-wiring' })
   @IsString()

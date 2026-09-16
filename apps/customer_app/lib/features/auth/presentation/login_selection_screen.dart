@@ -61,6 +61,55 @@ class LoginSelectionScreen extends ConsumerWidget {
               ),
               const Spacer(),
 
+              // Error notification if present
+              if (ref.watch(authNotifierProvider).error != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    ref.watch(authNotifierProvider).error!,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onErrorContainer,
+                      fontSize: isSeniorMode ? 16 : 14,
+                    ),
+                  ),
+                ),
+              ],
+
+              // Google Sign-In Action
+              OutlinedButton.icon(
+                onPressed: ref.watch(authNotifierProvider).isLoading
+                    ? null
+                    : () async {
+                        final success = await ref
+                            .read(authNotifierProvider.notifier)
+                            .loginWithGoogle();
+                        if (success && context.mounted) {
+                          context.go(AppRouter.home);
+                        }
+                      },
+                icon: const Icon(Icons.account_circle_outlined, size: 24),
+                label: Text(
+                  localizations.translate('btn_google'),
+                  style: TextStyle(
+                    fontSize: isSeniorMode ? 18 : 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: Size(double.infinity, isSeniorMode ? 64 : 52),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
               // Primary Action: Email Login & Register
               ElevatedButton.icon(
                 onPressed: () => context.push(AppRouter.emailLogin),

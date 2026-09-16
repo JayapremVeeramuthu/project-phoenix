@@ -31,8 +31,11 @@ export class StoreOrderService {
 
   private async resolveCustomerId(customerId: string): Promise<string> {
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(customerId);
-    const user = await this.prisma.user.findFirst({
-      where: isUuid ? { OR: [{ id: customerId }, { firebaseUid: customerId }] } : { firebaseUid: customerId },
+    if (!isUuid) {
+      throw new BadRequestException('Customer record not found');
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { id: customerId },
     });
     if (!user) {
       throw new BadRequestException('Customer record not found');
